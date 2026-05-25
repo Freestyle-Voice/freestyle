@@ -312,7 +312,7 @@ export default function GeneralSettingsPage(): React.JSX.Element {
 
         {/* Hotkey */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">Hotkey</label>
+          <div className="text-sm font-medium">Hotkey</div>
           {recorderState === "idle" ? (
             <button
               type="button"
@@ -380,10 +380,16 @@ export default function GeneralSettingsPage(): React.JSX.Element {
         {/* Microphone + Language side by side */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Microphone</label>
+            <label
+              htmlFor="settings-microphone"
+              className="text-sm font-medium"
+            >
+              Microphone
+            </label>
             <div className="flex items-center gap-2">
               <Mic className="text-muted-foreground h-4 w-4 shrink-0" />
               <select
+                id="settings-microphone"
                 value={selectedDevice}
                 onChange={(e) => handleDeviceChange(e.target.value)}
                 className="border-border bg-card text-foreground w-full appearance-auto rounded-lg border px-3 py-2 text-sm"
@@ -398,10 +404,13 @@ export default function GeneralSettingsPage(): React.JSX.Element {
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Language</label>
+            <label htmlFor="settings-language" className="text-sm font-medium">
+              Language
+            </label>
             <div className="flex items-center gap-2">
               <Languages className="text-muted-foreground h-4 w-4 shrink-0" />
               <select
+                id="settings-language"
                 value={language}
                 onChange={(e) => handleLanguageChange(e.target.value)}
                 className="border-border bg-card text-foreground w-full appearance-auto rounded-lg border px-3 py-2 text-sm"
@@ -434,12 +443,18 @@ export default function GeneralSettingsPage(): React.JSX.Element {
 
         {/* Transcription prompt hint */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">Transcription Prompt</label>
+          <label
+            htmlFor="settings-transcription-prompt"
+            className="text-sm font-medium"
+          >
+            Transcription Prompt
+          </label>
           <p className="text-muted-foreground text-xs">
             Hint for the speech model — list domain terms, names, or jargon to
             improve accuracy.
           </p>
           <input
+            id="settings-transcription-prompt"
             type="text"
             value={transcriptionPrompt}
             onChange={(e) => {
@@ -498,7 +513,7 @@ export default function GeneralSettingsPage(): React.JSX.Element {
         {/* Appearance + Widget Position side by side */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Theme</label>
+            <div className="text-sm font-medium">Theme</div>
             <div className="flex gap-2">
               {themeOptions.map((option) => (
                 <button
@@ -519,7 +534,7 @@ export default function GeneralSettingsPage(): React.JSX.Element {
             </div>
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Widget Position</label>
+            <div className="text-sm font-medium">Widget Position</div>
             <div className="flex flex-wrap gap-1.5">
               {[
                 { value: "bottom-center", label: "Bottom Center" },

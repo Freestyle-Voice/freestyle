@@ -80,7 +80,7 @@ export class Recorder {
     mr.stop();
     await done;
 
-    this.stream?.getTracks().forEach((t) => t.stop());
+    for (const t of this.stream?.getTracks() ?? []) t.stop();
     this.stream = null;
     this.mediaRecorder = null;
 
@@ -95,7 +95,7 @@ export class Recorder {
     if (this.mediaRecorder?.state === "recording") {
       this.mediaRecorder.stop();
     }
-    this.stream?.getTracks().forEach((t) => t.stop());
+    for (const t of this.stream?.getTracks() ?? []) t.stop();
     this.stream = null;
     this.mediaRecorder = null;
     this.chunks = [];

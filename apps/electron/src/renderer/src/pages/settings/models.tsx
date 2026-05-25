@@ -197,7 +197,7 @@ export default function ModelsPage(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [localLlmForm.setValue]);
 
   useEffect(() => {
     loadData();
@@ -299,7 +299,7 @@ export default function ModelsPage(): React.JSX.Element {
       setLlmSearch("");
       loadData();
     },
-    [keyProviders, loadData],
+    [keyProviders, loadData, apiKeyForm.reset],
   );
 
   const savePendingKeyAndModel = useCallback(
@@ -731,10 +731,14 @@ export default function ModelsPage(): React.JSX.Element {
               >
                 {/* Endpoint URL */}
                 <div className="space-y-1.5">
-                  <label className="text-muted-foreground text-xs font-medium">
+                  <label
+                    htmlFor="models-local-llm-url"
+                    className="text-muted-foreground text-xs font-medium"
+                  >
                     Endpoint URL
                   </label>
                   <input
+                    id="models-local-llm-url"
                     type="text"
                     {...localLlmForm.register("url", {
                       onChange: () => {
@@ -757,12 +761,16 @@ export default function ModelsPage(): React.JSX.Element {
 
                 {/* API Key (optional) */}
                 <div className="space-y-1.5">
-                  <label className="text-muted-foreground text-xs font-medium">
+                  <label
+                    htmlFor="models-local-llm-api-key"
+                    className="text-muted-foreground text-xs font-medium"
+                  >
                     API Key{" "}
                     <span className="text-muted-foreground/60">(optional)</span>
                   </label>
                   <div className="relative">
                     <input
+                      id="models-local-llm-api-key"
                       type={showLocalLlmApiKey ? "text" : "password"}
                       {...localLlmForm.register("api_key")}
                       placeholder="Leave empty if not required"

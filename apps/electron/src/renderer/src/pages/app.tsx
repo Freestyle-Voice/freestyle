@@ -108,6 +108,7 @@ export default function AppPage(): React.JSX.Element {
   const getInputVolume = useCallback(() => volumeRef.current, []);
 
   // -- Lazy singleton Streamer --
+  // biome-ignore lint/correctness/useExhaustiveDependencies: singleton must only be created once; hidePill is itself a stable useCallback declared below
   const getStreamer = useCallback((): Streamer => {
     if (!streamerRef.current) {
       streamerRef.current = new Streamer(getApiBase(), {
@@ -133,7 +134,7 @@ export default function AppPage(): React.JSX.Element {
       });
     }
     return streamerRef.current;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // -- Audio visualization (from a MediaStream) --
   const startVisualization = useCallback((stream: MediaStream) => {

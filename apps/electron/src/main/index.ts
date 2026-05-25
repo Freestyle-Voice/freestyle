@@ -161,7 +161,6 @@ function getAppWindowPosition(): { x: number; y: number } {
         x: width - APP_WIDTH - margin,
         y: height - APP_HEIGHT - margin,
       };
-    case "bottom-center":
     default:
       return {
         x: Math.round((width - APP_WIDTH) / 2),
