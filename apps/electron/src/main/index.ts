@@ -833,7 +833,11 @@ app.whenReady().then(() => {
     if (is.dev) return null;
     try {
       const result = await autoUpdater.checkForUpdates();
-      return result?.updateInfo?.version ?? null;
+      const latest = result?.updateInfo?.version;
+      if (!latest) return null;
+      // Only report an update when the remote version is actually newer
+      if (latest === app.getVersion()) return null;
+      return latest;
     } catch {
       return null;
     }

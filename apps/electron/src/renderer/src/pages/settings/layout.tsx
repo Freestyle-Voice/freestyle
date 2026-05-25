@@ -19,6 +19,7 @@ import {
   Cpu,
   FileText,
   MessageSquare,
+  Shield,
   Sliders,
 } from "lucide-react";
 import { useEffect } from "react";
@@ -41,17 +42,23 @@ const navItems = [
   },
   { to: "/settings/history", label: "History", icon: Clock, shortcut: "5" },
   {
+    to: "/settings/permissions",
+    label: "Permissions",
+    icon: Shield,
+    shortcut: "6",
+  },
+  {
     to: "/settings/feedback",
     label: "Feedback",
     icon: MessageSquare,
-    shortcut: "6",
+    shortcut: "7",
   },
 ];
 
 export default function SettingsLayout(): React.JSX.Element {
   const navigate = useNavigate();
 
-  // Keyboard shortcuts: Cmd/Ctrl+1-5 for nav
+  // Keyboard shortcuts: Cmd/Ctrl+1-7 for nav
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
