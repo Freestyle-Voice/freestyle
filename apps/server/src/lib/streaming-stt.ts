@@ -5,7 +5,7 @@ import { getDb } from "./db.js";
 export interface StreamCallbacks {
   onReady: (model: string) => void;
   onPartial: (text: string) => void;
-  onFinal: (text: string) => void;
+  onFinal: (text: string) => void | Promise<void>;
   onError: (message: string) => void;
   onClose: () => void;
 }

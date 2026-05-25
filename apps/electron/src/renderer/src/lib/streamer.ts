@@ -32,6 +32,12 @@ export class Streamer {
     this.callbacks = callbacks;
   }
 
+  setContext(context: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "context", context }));
+    }
+  }
+
   async start(deviceId?: string | null): Promise<MediaStream> {
     // Open WebSocket
     this.openWebSocket();

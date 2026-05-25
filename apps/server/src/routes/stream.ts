@@ -1,6 +1,7 @@
 import { upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { getDb } from "../lib/db.js";
+import { postProcess } from "../lib/post-process.js";
 import { getDefaultModels } from "../lib/providers.js";
 import {
   getApiKeyForProvider,
@@ -17,6 +18,7 @@ stream.get(
     let closed = false;
     const startTime = Date.now();
     let voiceDefaults: { provider: string; model_id: string } | null = null;
+    let appContext: string | null = null;
 
     return {
       onOpen(_event, ws) {
@@ -78,21 +80,31 @@ stream.get(
               onPartial: (text) => {
                 ws.send(JSON.stringify({ type: "partial", text }));
               },
-              onFinal: (text) => {
-                ws.send(JSON.stringify({ type: "final", text }));
+              onFinal: async (rawText) => {
+                const durationMs = Date.now() - startTime;
 
-                // Save to history
+                const pp = await postProcess(rawText, appContext);
+                const finalText = pp.cleaned;
+
+                ws.send(JSON.stringify({ type: "final", text: finalText }));
+
                 try {
                   const db = getDb();
                   db.prepare(
                     `INSERT INTO transcription_history
-                     (raw_text, voice_provider, voice_model, duration_ms)
-                     VALUES (?, ?, ?, ?)`,
+                     (raw_text, cleaned_text, voice_provider, voice_model, llm_provider, llm_model, duration_ms, input_tokens, output_tokens, cost_usd)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   ).run(
-                    text,
+                    rawText,
+                    finalText !== rawText ? finalText : null,
                     voiceDefaults!.provider,
                     voiceDefaults!.model_id,
-                    Date.now() - startTime,
+                    pp.llmProvider,
+                    pp.llmModel,
+                    durationMs,
+                    pp.inputTokens,
+                    pp.outputTokens,
+                    pp.costUsd,
                   );
                 } catch (err) {
                   console.error("Failed to save history:", err);
@@ -128,16 +140,14 @@ stream.get(
       },
 
       onMessage(event, ws) {
-        if (!upstream) return;
-
         // Binary data = audio chunk
         if (event.data instanceof ArrayBuffer) {
-          upstream.sendAudio(event.data);
+          upstream?.sendAudio(event.data);
           return;
         }
 
         // Text data = JSON command
-        let msg: { type: string };
+        let msg: { type: string; context?: string };
         try {
           msg = JSON.parse(
             typeof event.data === "string"
@@ -148,12 +158,14 @@ stream.get(
           return;
         }
 
-        if (msg.type === "commit") {
-          upstream.commit();
+        if (msg.type === "context") {
+          appContext = msg.context ?? null;
+        } else if (msg.type === "commit") {
+          upstream?.commit();
         } else if (msg.type === "cancel") {
           closed = true;
           try {
-            upstream.close();
+            upstream?.close();
           } catch {}
           try {
             ws.close();

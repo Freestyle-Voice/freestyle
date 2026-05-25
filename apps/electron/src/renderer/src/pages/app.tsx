@@ -183,6 +183,7 @@ export default function AppPage(): React.JSX.Element {
       ?.getFrontmostApp()
       .then((app) => {
         appContextRef.current = app;
+        if (app) streamerRef.current?.setContext(app);
       })
       .catch(() => {
         appContextRef.current = null;
