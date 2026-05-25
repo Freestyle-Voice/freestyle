@@ -177,7 +177,8 @@ export default function AppPage(): React.JSX.Element {
       clearTimeout(exitTimerRef.current);
       exitTimerRef.current = null;
     }
-    if (pillRef.current) pillRef.current.classList.remove("pill-exit");
+    // Don't remove pill-exit here — fill-mode:forwards holds the
+    // invisible state. Class is cleaned up in startRecording.
     setState("idle");
     setMessage("");
     setPartialText("");
@@ -199,18 +200,16 @@ export default function AppPage(): React.JSX.Element {
     }
     // Add the exit animation class — CSS handles everything
     wrapper.classList.add("pill-exit");
-    // After the animation duration, hide and clean up
+    // After the animation finishes, go to idle (hides window).
+    // Do NOT remove pill-exit class here — the animation's
+    // fill-mode:forwards holds opacity:0/scale:0, and removing
+    // the class would flash the pill back before the window hides.
+    // The class is cleaned up in startRecording on next use.
     exitTimerRef.current = setTimeout(() => {
       exitTimerRef.current = null;
       setState("idle");
       setMessage("");
       setPartialText("");
-      // Clean up after window is hidden
-      requestAnimationFrame(() => {
-        if (pillRef.current) {
-          pillRef.current.classList.remove("pill-exit");
-        }
-      });
     }, EXIT_ANIM_MS + 50);
   }, [goIdle]);
 
