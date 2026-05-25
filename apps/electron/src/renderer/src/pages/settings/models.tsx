@@ -7,7 +7,9 @@ import {
   Eye,
   EyeOff,
   Key,
+  Loader2,
   Mic,
+  Monitor,
   Pencil,
   Search,
   Sparkles,
@@ -48,7 +50,14 @@ interface ApiKeyEntry {
 // ---------------------------------------------------------------------------
 
 const VOICE_PROVIDERS = ["openai", "groq", "deepgram", "elevenlabs"];
-const LLM_PROVIDERS = ["openai", "anthropic", "google", "groq", "mistral"];
+const LLM_PROVIDERS = [
+  "openai",
+  "anthropic",
+  "google",
+  "groq",
+  "mistral",
+  "local-llm",
+];
 
 /** Canonical display names for providers */
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
@@ -60,6 +69,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   elevenlabs: "ElevenLabs",
   mistral: "Mistral",
   openrouter: "OpenRouter",
+  "local-llm": "Local LLM",
 };
 
 function displayName(providerId: string, fallback?: string): string {
@@ -105,24 +115,64 @@ export default function ModelsPage(): React.JSX.Element {
   const [deleteProvider, setDeleteProvider] = useState<string | null>(null);
   const [deleteBlockedBy, setDeleteBlockedBy] = useState<string[]>([]);
 
+  // Local LLM
+  const [useLocalLlm, setUseLocalLlm] = useState(false);
+  const [localLlmUrl, setLocalLlmUrl] = useState("http://localhost:11434");
+  const [localLlmApiKey, setLocalLlmApiKey] = useState("");
+  const [showLocalLlmApiKey, setShowLocalLlmApiKey] = useState(false);
+  const [localLlmTesting, setLocalLlmTesting] = useState(false);
+  const [localLlmConnected, setLocalLlmConnected] = useState<boolean | null>(
+    null,
+  );
+  const [localLlmError, setLocalLlmError] = useState<string | null>(null);
+  const [localLlmModels, setLocalLlmModels] = useState<string[]>([]);
+  const [localLlmModelDropdownOpen, setLocalLlmModelDropdownOpen] =
+    useState(false);
+
   // -------------------------------------------------------------------------
   // Data loading
   // -------------------------------------------------------------------------
 
   const loadData = useCallback(async () => {
     try {
-      const [availRes, configRes, keysRes, cleanupRes] = await Promise.all([
+      const [
+        availRes,
+        configRes,
+        keysRes,
+        cleanupRes,
+        localUrlRes,
+        localKeyRes,
+      ] = await Promise.all([
         fetch(`${getApiBase()}/api/models/available`),
         fetch(`${getApiBase()}/api/models/configured`),
         fetch(`${getApiBase()}/api/keys`),
         fetch(`${getApiBase()}/api/settings/llm_cleanup`),
+        fetch(`${getApiBase()}/api/settings/local_llm_url`),
+        fetch(`${getApiBase()}/api/settings/local_llm_api_key`),
       ]);
       if (availRes.ok) setAvailable(await availRes.json());
-      if (configRes.ok) setConfigured(await configRes.json());
+      if (configRes.ok) {
+        const configs: ConfiguredModel[] = await configRes.json();
+        setConfigured(configs);
+        const defaultLlmConfig = configs.find(
+          (m) => m.type === "llm" && m.is_default === 1,
+        );
+        if (defaultLlmConfig?.provider === "local-llm") {
+          setUseLocalLlm(true);
+        }
+      }
       if (keysRes.ok) setApiKeys(await keysRes.json());
       if (cleanupRes.ok) {
         const data = await cleanupRes.json();
         if (data?.value) setLlmCleanup(data.value === "true");
+      }
+      if (localUrlRes.ok) {
+        const data = await localUrlRes.json();
+        if (data?.value) setLocalLlmUrl(data.value);
+      }
+      if (localKeyRes.ok) {
+        const data = await localKeyRes.json();
+        if (data?.value) setLocalLlmApiKey(data.value);
       }
     } catch (err) {
       console.error("Failed to load models data:", err);
@@ -173,6 +223,8 @@ export default function ModelsPage(): React.JSX.Element {
   for (const m of available) {
     if (m.type !== "llm") continue;
     if (!LLM_PROVIDERS.includes(m.provider_id)) continue;
+    // Local models are shown in their own section, not the cloud dropdown
+    if (m.provider_id === "local-llm") continue;
     let entry = llmModelsByProvider.get(m.provider_id);
     if (!entry) {
       entry = {
@@ -197,7 +249,11 @@ export default function ModelsPage(): React.JSX.Element {
 
   const selectModel = useCallback(
     async (model: AvailableModel, type: "voice" | "llm") => {
-      if (!keyProviders.has(model.provider_id)) {
+      // Local providers don't need API keys
+      if (
+        model.provider_id !== "local-llm" &&
+        !keyProviders.has(model.provider_id)
+      ) {
         // Show the API key dialog
         setPendingModel(model);
         setPendingKeyProvider(model.provider_id);
@@ -569,49 +625,305 @@ export default function ModelsPage(): React.JSX.Element {
         </button>
 
         {llmCleanup && (
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                setLlmDropdownOpen(!llmDropdownOpen);
-                setVoiceDropdownOpen(false);
-                setLlmSearch("");
-                closePendingKey();
-              }}
-              className="border-border hover:bg-secondary flex w-full items-center justify-between rounded-lg border px-4 py-2.5 text-sm"
-            >
-              <div className="flex items-center gap-2">
-                <Sparkles className="text-muted-foreground h-4 w-4" />
-                {defaultLlm ? (
-                  <span>
-                    {defaultLlm.model_name}{" "}
-                    <span className="text-muted-foreground text-xs">
-                      ({displayName(defaultLlm.provider)})
+          <>
+            {/* Cloud / Local toggle */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setUseLocalLlm(false)}
+                className={cn(
+                  "flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                  !useLocalLlm
+                    ? "border-primary bg-primary/5 text-foreground"
+                    : "border-border text-muted-foreground hover:bg-secondary",
+                )}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Cloud LLM
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseLocalLlm(true)}
+                className={cn(
+                  "flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                  useLocalLlm
+                    ? "border-primary bg-primary/5 text-foreground"
+                    : "border-border text-muted-foreground hover:bg-secondary",
+                )}
+              >
+                <Monitor className="h-3.5 w-3.5" />
+                Local LLM
+              </button>
+            </div>
+
+            {useLocalLlm ? (
+              <div className="space-y-3">
+                {/* Endpoint URL */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground text-xs font-medium">
+                    Endpoint URL
+                  </label>
+                  <input
+                    type="text"
+                    value={localLlmUrl}
+                    onChange={(e) => {
+                      setLocalLlmUrl(e.target.value);
+                      setLocalLlmConnected(null);
+                      setLocalLlmError(null);
+                    }}
+                    placeholder="http://localhost:11434"
+                    className="border-border bg-background w-full rounded-lg border px-3 py-2 text-sm"
+                  />
+                </div>
+
+                {/* API Key (optional) */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground text-xs font-medium">
+                    API Key{" "}
+                    <span className="text-muted-foreground/60">(optional)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showLocalLlmApiKey ? "text" : "password"}
+                      value={localLlmApiKey}
+                      onChange={(e) => setLocalLlmApiKey(e.target.value)}
+                      placeholder="Leave empty if not required"
+                      className="border-border bg-background w-full rounded-lg border px-3 py-2 pr-10 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLocalLlmApiKey(!showLocalLlmApiKey)}
+                      className="text-muted-foreground hover:text-foreground absolute right-3 top-1/2 -translate-y-1/2"
+                    >
+                      {showLocalLlmApiKey ? (
+                        <EyeOff size={14} />
+                      ) : (
+                        <Eye size={14} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Test Connection */}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={!localLlmUrl.trim() || localLlmTesting}
+                    onClick={async () => {
+                      setLocalLlmTesting(true);
+                      setLocalLlmConnected(null);
+                      setLocalLlmError(null);
+
+                      try {
+                        const url = localLlmUrl.replace(/\/+$/, "");
+
+                        // Save URL and key to settings
+                        await Promise.all([
+                          fetch(`${getApiBase()}/api/settings/local_llm_url`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ value: url }),
+                          }),
+                          localLlmApiKey.trim()
+                            ? fetch(
+                                `${getApiBase()}/api/settings/local_llm_api_key`,
+                                {
+                                  method: "PUT",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                  },
+                                  body: JSON.stringify({
+                                    value: localLlmApiKey.trim(),
+                                  }),
+                                },
+                              )
+                            : fetch(
+                                `${getApiBase()}/api/settings/local_llm_api_key`,
+                                { method: "DELETE" },
+                              ),
+                        ]);
+
+                        const res = await fetch(
+                          `${getApiBase()}/api/settings/local-llm/test`,
+                          {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              url,
+                              api_key: localLlmApiKey.trim() || undefined,
+                            }),
+                          },
+                        );
+                        const data = await res.json();
+
+                        if (data.ok) {
+                          setLocalLlmConnected(true);
+                          setLocalLlmModels(data.models ?? []);
+                          // Refresh available models so local models appear
+                          loadData();
+                        } else {
+                          setLocalLlmConnected(false);
+                          setLocalLlmError(data.error ?? "Connection failed");
+                        }
+                      } catch (err) {
+                        setLocalLlmConnected(false);
+                        setLocalLlmError(
+                          err instanceof Error
+                            ? err.message
+                            : "Connection failed",
+                        );
+                      } finally {
+                        setLocalLlmTesting(false);
+                      }
+                    }}
+                    className="bg-secondary hover:bg-secondary/80 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+                  >
+                    {localLlmTesting ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Testing...
+                      </span>
+                    ) : (
+                      "Test Connection"
+                    )}
+                  </button>
+
+                  {localLlmConnected === true && (
+                    <span className="text-xs text-green-600 dark:text-green-400">
+                      Connected ({localLlmModels.length}{" "}
+                      {localLlmModels.length === 1 ? "model" : "models"})
                     </span>
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">
-                    Select an LLM model...
-                  </span>
+                  )}
+                  {localLlmConnected === false && (
+                    <span className="text-destructive text-xs">
+                      {localLlmError}
+                    </span>
+                  )}
+                </div>
+
+                {/* Local model dropdown */}
+                {localLlmModels.length > 0 && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLocalLlmModelDropdownOpen(!localLlmModelDropdownOpen)
+                      }
+                      className="border-border hover:bg-secondary flex w-full items-center justify-between rounded-lg border px-4 py-2.5 text-sm"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Monitor className="text-muted-foreground h-4 w-4" />
+                        {defaultLlm?.provider === "local-llm" ? (
+                          <span>{defaultLlm.model_name}</span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            Select a local model...
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown
+                        className={cn(
+                          "text-muted-foreground h-4 w-4 transition-transform",
+                          localLlmModelDropdownOpen && "rotate-180",
+                        )}
+                      />
+                    </button>
+
+                    {localLlmModelDropdownOpen && (
+                      <div className="border-border bg-card absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border shadow-lg">
+                        {localLlmModels.map((modelName) => {
+                          const modelId = `local-llm/${modelName}`;
+                          const isActive =
+                            defaultLlm?.model_id === modelId &&
+                            defaultLlm?.provider === "local-llm";
+                          return (
+                            <button
+                              key={modelName}
+                              type="button"
+                              onClick={async () => {
+                                await fetch(
+                                  `${getApiBase()}/api/models/configured`,
+                                  {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                      provider: "local-llm",
+                                      model_id: modelId,
+                                      model_name: modelName,
+                                      type: "llm",
+                                      is_default: true,
+                                    }),
+                                  },
+                                );
+                                setLocalLlmModelDropdownOpen(false);
+                                loadData();
+                              }}
+                              className={cn(
+                                "hover:bg-secondary flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
+                                isActive && "bg-primary/5",
+                              )}
+                            >
+                              <span className="flex-1">{modelName}</span>
+                              {isActive && (
+                                <Check size={14} className="text-primary" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-              <ChevronDown
-                className={cn(
-                  "text-muted-foreground h-4 w-4 transition-transform",
-                  llmDropdownOpen && "rotate-180",
-                )}
-              />
-            </button>
+            ) : (
+              /* Cloud LLM model dropdown (existing) */
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLlmDropdownOpen(!llmDropdownOpen);
+                    setVoiceDropdownOpen(false);
+                    setLlmSearch("");
+                    closePendingKey();
+                  }}
+                  className="border-border hover:bg-secondary flex w-full items-center justify-between rounded-lg border px-4 py-2.5 text-sm"
+                >
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="text-muted-foreground h-4 w-4" />
+                    {defaultLlm && defaultLlm.provider !== "local-llm" ? (
+                      <span>
+                        {defaultLlm.model_name}{" "}
+                        <span className="text-muted-foreground text-xs">
+                          ({displayName(defaultLlm.provider)})
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        Select an LLM model...
+                      </span>
+                    )}
+                  </div>
+                  <ChevronDown
+                    className={cn(
+                      "text-muted-foreground h-4 w-4 transition-transform",
+                      llmDropdownOpen && "rotate-180",
+                    )}
+                  />
+                </button>
 
-            {llmDropdownOpen &&
-              renderModelDropdown(
-                llmModelsByProvider,
-                "llm",
-                defaultLlm,
-                llmSearch,
-                setLlmSearch,
-              )}
-          </div>
+                {llmDropdownOpen &&
+                  renderModelDropdown(
+                    llmModelsByProvider,
+                    "llm",
+                    defaultLlm,
+                    llmSearch,
+                    setLlmSearch,
+                  )}
+              </div>
+            )}
+          </>
         )}
       </div>
 

@@ -56,4 +56,43 @@ settings.delete("/:key", (c) => {
   return c.json({ ok: true });
 });
 
+// Test a local LLM endpoint and return available models
+settings.post("/local-llm/test", async (c) => {
+  const body = await c.req.json<{ url: string; api_key?: string }>();
+  const url = body.url?.replace(/\/+$/, "");
+  if (!url) {
+    return c.json({ error: "URL is required" }, 400);
+  }
+
+  try {
+    const res = await fetch(`${url}/v1/models`, {
+      headers: {
+        ...(body.api_key ? { Authorization: `Bearer ${body.api_key}` } : {}),
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!res.ok) {
+      return c.json(
+        { error: `Server returned ${res.status}: ${res.statusText}` },
+        502,
+      );
+    }
+
+    const data = (await res.json()) as {
+      data?: { id: string }[];
+    };
+
+    let models: string[] = [];
+    if (data.data && Array.isArray(data.data)) {
+      models = data.data.map((m) => m.id);
+    }
+
+    return c.json({ ok: true, models });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to connect";
+    return c.json({ error: message }, 502);
+  }
+});
+
 export default settings;

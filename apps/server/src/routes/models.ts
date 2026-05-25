@@ -14,6 +14,44 @@ interface AvailableModel {
   cost_output?: number;
 }
 
+async function fetchLocalLlmModels(): Promise<AvailableModel[]> {
+  const db = getDb();
+  const urlRow = db
+    .prepare("SELECT value FROM settings WHERE key = 'local_llm_url'")
+    .get() as { value: string } | undefined;
+  if (!urlRow?.value) return [];
+
+  const keyRow = db
+    .prepare("SELECT value FROM settings WHERE key = 'local_llm_api_key'")
+    .get() as { value: string } | undefined;
+
+  const baseUrl = urlRow.value.replace(/\/+$/, "");
+
+  const res = await fetch(`${baseUrl}/v1/models`, {
+    headers: {
+      ...(keyRow?.value ? { Authorization: `Bearer ${keyRow.value}` } : {}),
+    },
+    signal: AbortSignal.timeout(3000),
+  });
+  if (!res.ok) return [];
+
+  const data = (await res.json()) as {
+    data?: { id: string }[];
+  };
+  if (!data.data || !Array.isArray(data.data)) return [];
+
+  return data.data.map((m) => ({
+    provider_id: "local-llm",
+    provider_name: "Local LLM",
+    model_id: `local-llm/${m.id}`,
+    model_name: m.id,
+    family: "local",
+    type: "llm" as const,
+    cost_input: 0,
+    cost_output: 0,
+  }));
+}
+
 // Speech-to-text model families from models.dev
 const STT_FAMILIES = new Set(["whisper", "deepgram"]);
 
@@ -192,6 +230,11 @@ models.get("/available", async (c) => {
 
     // Add builtin voice models
     available.push(...BUILTIN_VOICE_MODELS);
+
+    try {
+      const localModels = await fetchLocalLlmModels();
+      available.push(...localModels);
+    } catch {}
 
     return c.json(available);
   } catch (err) {

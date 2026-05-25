@@ -7,6 +7,9 @@ import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModelV1 } from "ai";
 import { getDb } from "./db.js";
 
+// Providers that don't require an API key from the api_keys table
+const LOCAL_PROVIDERS = new Set(["local-llm"]);
+
 // Provider factory creators keyed by provider ID
 const PROVIDER_FACTORIES: Record<
   string,
@@ -38,6 +41,21 @@ const PROVIDER_FACTORIES: Record<
   elevenlabs: (apiKey) => {
     const p = createElevenLabs({ apiKey });
     return { transcription: (m) => p.transcription(m) };
+  },
+  "local-llm": () => {
+    const db = getDb();
+    const urlRow = db
+      .prepare("SELECT value FROM settings WHERE key = 'local_llm_url'")
+      .get() as { value: string } | undefined;
+    const keyRow = db
+      .prepare("SELECT value FROM settings WHERE key = 'local_llm_api_key'")
+      .get() as { value: string } | undefined;
+
+    const baseURL = urlRow?.value || "http://localhost:11434";
+    const apiKey = keyRow?.value || "local";
+
+    const p = createOpenAI({ apiKey, baseURL: `${baseURL}/v1` });
+    return { chat: (m: string) => p.chat(m) };
   },
 };
 
@@ -109,7 +127,8 @@ export function createChatModel(
   providerId: string,
   modelId: string,
 ): LanguageModelV1 {
-  const apiKey = getApiKey(providerId);
+  const isLocal = LOCAL_PROVIDERS.has(providerId);
+  const apiKey = isLocal ? "local" : getApiKey(providerId);
   if (!apiKey)
     throw new Error(`No API key configured for provider: ${providerId}`);
 
