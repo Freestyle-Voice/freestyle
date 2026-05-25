@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const BARS = 14;
 const RISE = 0.55;
 const FALL = 0.22;
+const DISMISS_MS = 400; // closing animation duration
 
 type PillState =
   | "idle"
@@ -15,7 +16,8 @@ type PillState =
   | "recording"
   | "transcribing"
   | "pasted"
-  | "error";
+  | "error"
+  | "dismissing";
 
 // ---------------------------------------------------------------------------
 // Sound system — generates short sine-wave tones via Web Audio API.
@@ -145,6 +147,16 @@ export default function AppPage(): React.JSX.Element {
     setElapsed(0);
   }, []);
 
+  // Play the closing iris animation, then go to idle (which hides the window)
+  const dismissPill = useCallback(() => {
+    setState("dismissing");
+    setTimeout(() => {
+      setState("idle");
+      setMessage("");
+      setPartialText("");
+    }, DISMISS_MS);
+  }, []);
+
   // -- Start recording --
   const startRecording = useCallback(async () => {
     if (wantsMicRef.current) return; // Already recording
@@ -210,15 +222,9 @@ export default function AppPage(): React.JSX.Element {
               await window.api.pasteText(text);
               setState("pasted");
               setMessage(text.length > 40 ? `${text.slice(0, 40)}...` : text);
-              setTimeout(() => {
-                setState("idle");
-                setMessage("");
-                setPartialText("");
-              }, 1500);
+              setTimeout(() => dismissPill(), 1200);
             } else {
-              setState("idle");
-              setMessage("");
-              setPartialText("");
+              dismissPill();
             }
           },
           onError: (msg) => {
@@ -228,10 +234,7 @@ export default function AppPage(): React.JSX.Element {
             recorderRef.current.cancel();
             setState("error");
             setMessage(msg);
-            setTimeout(() => {
-              setState("idle");
-              setMessage("");
-            }, 2500);
+            setTimeout(() => dismissPill(), 2000);
           },
         });
         streamerRef.current = streamer;
@@ -247,9 +250,9 @@ export default function AppPage(): React.JSX.Element {
       wantsMicRef.current = false;
       setState("error");
       setMessage(err instanceof Error ? err.message : "Mic access denied");
-      setTimeout(() => setState("idle"), 2500);
+      setTimeout(() => dismissPill(), 2000);
     }
-  }, [startVisualization]);
+  }, [startVisualization, dismissPill]);
 
   // -- Commit: stop recording and transcribe --
   const commitRecording = useCallback(async () => {
@@ -323,20 +326,13 @@ export default function AppPage(): React.JSX.Element {
       await window.api.pasteText(text);
       setState("pasted");
       setMessage(text.length > 40 ? `${text.slice(0, 40)}...` : text);
-      setTimeout(() => {
-        setState("idle");
-        setMessage("");
-        setPartialText("");
-      }, 1500);
+      setTimeout(() => dismissPill(), 1200);
     } catch (err) {
       setState("error");
       setMessage(err instanceof Error ? err.message : "Transcription failed");
-      setTimeout(() => {
-        setState("idle");
-        setMessage("");
-      }, 2500);
+      setTimeout(() => dismissPill(), 2000);
     }
-  }, [useStreaming, stopVisualization]);
+  }, [useStreaming, stopVisualization, dismissPill]);
 
   const cancelRecording = useCallback(() => {
     wantsMicRef.current = false;
@@ -387,7 +383,8 @@ export default function AppPage(): React.JSX.Element {
         s === "idle" ||
         s === "transcribing" ||
         s === "pasted" ||
-        s === "error"
+        s === "error" ||
+        s === "dismissing"
       ) {
         startRecording();
       }
@@ -420,9 +417,12 @@ export default function AppPage(): React.JSX.Element {
   const gap = svgWidth / BARS;
   const barWidth = Math.min(gap * 0.55, 5);
 
+  const isDismissing = state === "dismissing";
+
   // Animated glow uses CSS animation via a class
-  const glowState =
-    state === "initializing"
+  const glowState = isDismissing
+    ? "glow-dismissing"
+    : state === "initializing"
       ? "glow-initializing"
       : state === "recording"
         ? "glow-recording"
@@ -463,11 +463,27 @@ export default function AppPage(): React.JSX.Element {
           .glow-pasted { box-shadow: 0 0 10px 3px rgba(138,182,42,0.12); transition: box-shadow 300ms ease; }
           .glow-error { animation: glow-pulse-red 1.5s ease-in-out infinite; }
           .glow-idle { box-shadow: 0 0 6px 2px rgba(161,161,170,0.05); transition: box-shadow 300ms ease; }
+          .glow-dismissing { box-shadow: 0 0 6px 2px rgba(138,182,42,0.08); transition: box-shadow 200ms ease; }
+
+          @keyframes pill-dismiss {
+            0% { max-width: 420px; padding-left: 10px; padding-right: 10px; opacity: 1; transform: scale(1); }
+            50% { max-width: 52px; padding-left: 10px; padding-right: 10px; opacity: 1; transform: scale(1); }
+            100% { max-width: 52px; padding-left: 10px; padding-right: 10px; opacity: 0; transform: scale(0.6); }
+          }
+          .pill-dismissing {
+            animation: pill-dismiss ${DISMISS_MS}ms ease-in-out forwards;
+            overflow: hidden;
+            justify-content: center;
+          }
+          .pill-dismissing > *:not(:first-child) {
+            opacity: 0;
+            transition: opacity 100ms ease-out;
+          }
         `}
       </style>
       <div className={glowState} style={{ borderRadius: 28 }}>
         <div
-          className="inline-flex items-center gap-3"
+          className={`inline-flex items-center gap-3${isDismissing ? " pill-dismissing" : ""}`}
           style={
             {
               height: 48,
@@ -479,13 +495,13 @@ export default function AppPage(): React.JSX.Element {
               fontFamily: "'DM Sans', sans-serif",
               fontSize: 14,
               fontWeight: 500,
-              minWidth: 200,
+              minWidth: isDismissing ? 48 : 200,
               maxWidth: 420,
               WebkitAppRegion: "no-drag",
             } as React.CSSProperties
           }
         >
-          {/* Persistent orb — never unmounts, only props change */}
+          {/* Persistent orb — visible during dismissing for the iris close effect */}
           {state !== "idle" && (
             <div
               style={{
