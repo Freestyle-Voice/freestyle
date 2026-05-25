@@ -1,0 +1,89 @@
+# Publish workflow — runs when the "accepted" label is added to a
+# Craft publish request issue.  Downloads build artifacts from the
+# CI run on the release branch and creates a GitHub Release.
+
+name: Publish
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  publish:
+    if: github.event.label.name == 'accepted' && github.event.issue.state == 'open'
+    runs-on: ubuntu-latest
+    name: Publish release
+    environment: production
+    steps:
+      - name: Generate GitHub App token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Parse version from issue title
+        id: version
+        run: |
+          TITLE="${{ github.event.issue.title }}"
+          VERSION=$(echo "$TITLE" | grep -oP '\d+\.\d+\.\d+(-\S+)?$' || true)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not parse version from issue title: $TITLE"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: release/${{ steps.version.outputs.version }}
+          token: ${{ steps.token.outputs.token }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: "package.json"
+          cache: "pnpm"
+
+      - name: Install Craft
+        run: |
+          CRAFT_VERSION=$(curl -sL https://api.github.com/repos/getsentry/craft/releases/latest | jq -r .tag_name)
+          curl -sL "https://github.com/getsentry/craft/releases/download/${CRAFT_VERSION}/craft-linux" -o /usr/local/bin/craft
+          chmod +x /usr/local/bin/craft
+
+      - name: Wait for CI on release branch
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          BRANCH="release/${{ steps.version.outputs.version }}"
+          echo "Waiting for CI on $BRANCH..."
+          RUN_ID=$(gh run list --branch "$BRANCH" --workflow "Build & Test" --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::No CI run found for $BRANCH"
+            exit 1
+          fi
+          gh run watch "$RUN_ID" --exit-status
+
+      - name: Publish with Craft
+        env:
+          GITHUB_API_TOKEN: ${{ steps.token.outputs.token }}
+        run: craft publish ${{ steps.version.outputs.version }} --no-input --no-status-check
+
+      - name: Close issue on success
+        if: success()
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          gh issue close ${{ github.event.issue.number }} --comment "Published ${{ steps.version.outputs.version }}."
+
+      - name: Handle failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --body "Publish failed. See [run logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
+          gh issue edit ${{ github.event.issue.number }} --remove-label accepted

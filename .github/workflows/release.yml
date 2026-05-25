@@ -19,17 +19,28 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
   issues: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     name: Release a new version
     steps:
+      - name: Generate GitHub App token
+        id: token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.token.outputs.token }}
 
       - uses: pnpm/action-setup@v4
 
@@ -45,4 +56,4 @@ jobs:
           merge_target: ${{ inputs.merge_target }}
           publish_repo: self
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
