@@ -27,8 +27,9 @@ type PillState =
   | "initializing"
   | "recording"
   | "transcribing"
-  | "done"
   | "error";
+
+const EXIT_ANIM_MS = 400;
 
 // ---------------------------------------------------------------------------
 // Sound system — generates short sine-wave tones via Web Audio API.
@@ -100,6 +101,7 @@ export default function AppPage(): React.JSX.Element {
   const wantsMicRef = useRef(false);
   const appContextRef = useRef<string | null>(null);
   const micWarmedUp = useRef(false); // true after first successful getUserMedia
+  const pillRef = useRef<HTMLDivElement>(null);
 
   const getInputVolume = useCallback(() => volumeRef.current, []);
 
@@ -167,35 +169,74 @@ export default function AppPage(): React.JSX.Element {
     setElapsed(0);
   }, []);
 
-  const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitRafRef = useRef(0);
 
-  // Go back to idle and let the hide-pill effect handle window visibility
+  // Go back to idle immediately (for errors, edge cases)
   const goIdle = useCallback(() => {
-    if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
+    if (exitTimerRef.current) {
+      clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+    cancelAnimationFrame(exitRafRef.current);
     setState("idle");
     setMessage("");
     setPartialText("");
   }, []);
 
-  // Show a brief "done" state (green orb, no text) then hide.
-  // Gives the user a 600ms visual confirmation that the paste worked.
+  // Exit animation: shrink + fade the pill (keeping current content visible
+  // during the animation), then go to idle. Does NOT change React state
+  // until the animation finishes, so no layout jumps.
   const finishAndHide = useCallback(() => {
-    if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
-    setState("done");
-    setMessage("");
-    setPartialText("");
-    doneTimerRef.current = setTimeout(() => {
-      doneTimerRef.current = null;
+    if (exitTimerRef.current) {
+      clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+    cancelAnimationFrame(exitRafRef.current);
+    const el = pillRef.current;
+    if (!el) {
+      goIdle();
+      return;
+    }
+    // Set starting state without transition
+    el.style.transition = "none";
+    el.style.transform = "scale(1)";
+    el.style.opacity = "1";
+    // Double-rAF: guarantees the 'from' frame is painted before 'to'
+    exitRafRef.current = requestAnimationFrame(() => {
+      exitRafRef.current = requestAnimationFrame(() => {
+        if (!pillRef.current) return;
+        pillRef.current.style.transition = `transform ${EXIT_ANIM_MS}ms ease-in-out, opacity ${EXIT_ANIM_MS}ms ease-in-out`;
+        pillRef.current.style.transform = "scale(0.6)";
+        pillRef.current.style.opacity = "0";
+      });
+    });
+    exitTimerRef.current = setTimeout(() => {
+      exitTimerRef.current = null;
+      if (pillRef.current) {
+        pillRef.current.style.transition = "";
+        pillRef.current.style.transform = "";
+        pillRef.current.style.opacity = "";
+      }
       setState("idle");
-    }, 600);
-  }, []);
+      setMessage("");
+      setPartialText("");
+    }, EXIT_ANIM_MS + 50);
+  }, [goIdle]);
 
   // -- Start recording --
   const startRecording = useCallback(async () => {
     if (wantsMicRef.current) return; // Already recording
-    if (doneTimerRef.current) {
-      clearTimeout(doneTimerRef.current);
-      doneTimerRef.current = null;
+    // Cancel any pending exit animation
+    if (exitTimerRef.current) {
+      clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+    cancelAnimationFrame(exitRafRef.current);
+    if (pillRef.current) {
+      pillRef.current.style.transition = "";
+      pillRef.current.style.transform = "";
+      pillRef.current.style.opacity = "";
     }
     wantsMicRef.current = true;
     setMessage("");
@@ -414,12 +455,7 @@ export default function AppPage(): React.JSX.Element {
       // Allow starting from idle, or from terminal states that the pill
       // may still be displaying (transcribing/pasted/error) when the
       // user presses the hotkey again before the auto-dismiss fires.
-      if (
-        s === "idle" ||
-        s === "transcribing" ||
-        s === "done" ||
-        s === "error"
-      ) {
+      if (s === "idle" || s === "transcribing" || s === "error") {
         startRecording();
       }
     });
@@ -457,11 +493,9 @@ export default function AppPage(): React.JSX.Element {
         ? "glow-recording"
         : state === "transcribing"
           ? "glow-transcribing"
-          : state === "done"
-            ? "glow-done"
-            : state === "error"
-              ? "glow-error"
-              : "glow-idle";
+          : state === "error"
+            ? "glow-error"
+            : "glow-idle";
 
   return (
     <div
@@ -489,13 +523,13 @@ export default function AppPage(): React.JSX.Element {
           .glow-initializing { animation: glow-pulse-amber 1s ease-in-out infinite; }
           .glow-recording { animation: glow-pulse-green 2s ease-in-out infinite; }
           .glow-transcribing { animation: glow-pulse-blue 1.5s ease-in-out infinite; }
-          .glow-done { box-shadow: 0 0 10px 3px rgba(138,182,42,0.15); transition: box-shadow 200ms ease; }
           .glow-error { animation: glow-pulse-red 1.5s ease-in-out infinite; }
           .glow-idle { box-shadow: 0 0 6px 2px rgba(161,161,170,0.05); transition: box-shadow 300ms ease; }
         `}
       </style>
       <div className={glowState} style={{ borderRadius: 28 }}>
         <div
+          ref={pillRef}
           className="inline-flex items-center gap-3"
           style={
             {
@@ -625,8 +659,6 @@ export default function AppPage(): React.JSX.Element {
               {partialText ? partialText.slice(-30) : "Transcribing..."}
             </span>
           )}
-
-          {state === "done" && <span style={pillTextStyle}>Done</span>}
 
           {state === "error" && (
             <span style={pillTextStyle}>{message || "Error"}</span>
