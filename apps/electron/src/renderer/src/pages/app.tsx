@@ -29,8 +29,7 @@ type PillState =
   | "recording"
   | "transcribing"
   | "pasted"
-  | "error"
-  | "dismissing";
+  | "error";
 
 // ---------------------------------------------------------------------------
 // Sound system — generates short sine-wave tones via Web Audio API.
@@ -170,30 +169,26 @@ export default function AppPage(): React.JSX.Element {
     setElapsed(0);
   }, []);
 
-  // Dismiss animation: shrink + fade the pill via direct DOM manipulation,
-  // then go to idle (which hides the window). Uses the DOM directly to
-  // guarantee two separate paint frames (React state batching defeats CSS
-  // transitions because 'from' and 'to' values land in the same frame).
+  // Dismiss animation: shrink + fade the pill, then hide the window.
+  // We do NOT change the pill state to "dismissing" — that would remove
+  // the text content (pasted/error/etc) and cause a visual jump. Instead
+  // we keep the current visual state and only apply an inline CSS
+  // transform+opacity animation via the DOM ref.
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dismissPill = useCallback(() => {
     if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-    setState("dismissing");
     const el = pillRef.current;
     if (el) {
-      // Ensure the transition property is set and the 'from' frame is painted
       el.style.transition = `transform ${DISMISS_MS}ms ease-in-out, opacity ${DISMISS_MS}ms ease-in-out`;
       el.style.transform = "scale(1)";
       el.style.opacity = "1";
-      // Force the browser to paint the current frame
-      el.getBoundingClientRect();
-      // Now apply the 'to' values — the browser will animate between the two
+      el.getBoundingClientRect(); // force paint of 'from' frame
       el.style.transform = "scale(0.6)";
       el.style.opacity = "0";
     }
     dismissTimerRef.current = setTimeout(() => {
       dismissTimerRef.current = null;
-      // Reset inline styles so next show starts clean
       if (pillRef.current) {
         pillRef.current.style.transition = "";
         pillRef.current.style.transform = "";
@@ -208,12 +203,11 @@ export default function AppPage(): React.JSX.Element {
   // -- Start recording --
   const startRecording = useCallback(async () => {
     if (wantsMicRef.current) return; // Already recording
-    // Cancel any pending dismiss animation
+    // Cancel any pending dismiss animation and reset inline styles
     if (dismissTimerRef.current) {
       clearTimeout(dismissTimerRef.current);
       dismissTimerRef.current = null;
     }
-    // Reset any inline dismiss styles so the pill appears at full size
     if (pillRef.current) {
       pillRef.current.style.transition = "";
       pillRef.current.style.transform = "";
@@ -449,8 +443,7 @@ export default function AppPage(): React.JSX.Element {
         s === "idle" ||
         s === "transcribing" ||
         s === "pasted" ||
-        s === "error" ||
-        s === "dismissing"
+        s === "error"
       ) {
         startRecording();
       }
@@ -481,12 +474,9 @@ export default function AppPage(): React.JSX.Element {
   const gap = SVG_WIDTH / BARS;
   const barWidth = Math.min(gap * 0.55, 5);
 
-  const isDismissing = state === "dismissing";
-
   // Animated glow uses CSS animation via a class
-  const glowState = isDismissing
-    ? "glow-dismissing"
-    : state === "initializing"
+  const glowState =
+    state === "initializing"
       ? "glow-initializing"
       : state === "recording"
         ? "glow-recording"
@@ -527,7 +517,6 @@ export default function AppPage(): React.JSX.Element {
           .glow-pasted { box-shadow: 0 0 10px 3px rgba(138,182,42,0.12); transition: box-shadow 300ms ease; }
           .glow-error { animation: glow-pulse-red 1.5s ease-in-out infinite; }
           .glow-idle { box-shadow: 0 0 6px 2px rgba(161,161,170,0.05); transition: box-shadow 300ms ease; }
-          .glow-dismissing { box-shadow: 0 0 6px 2px rgba(138,182,42,0.08); transition: box-shadow 200ms ease; }
         `}
       </style>
       <div className={glowState} style={{ borderRadius: 28 }}>
