@@ -176,17 +176,35 @@ export default function AppPage(): React.JSX.Element {
   // transform+opacity animation via the DOM ref.
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const dismissRafRef = useRef(0);
+
   const dismissPill = useCallback(() => {
     if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    cancelAnimationFrame(dismissRafRef.current);
     const el = pillRef.current;
-    if (el) {
-      el.style.transition = `transform ${DISMISS_MS}ms ease-in-out, opacity ${DISMISS_MS}ms ease-in-out`;
-      el.style.transform = "scale(1)";
-      el.style.opacity = "1";
-      el.getBoundingClientRect(); // force paint of 'from' frame
-      el.style.transform = "scale(0.6)";
-      el.style.opacity = "0";
+    if (!el) {
+      // No DOM element — just hide immediately
+      setState("idle");
+      setMessage("");
+      setPartialText("");
+      return;
     }
+    // Phase 1: set 'from' state and the transition property
+    el.style.transition = "none";
+    el.style.transform = "scale(1)";
+    el.style.opacity = "1";
+    // Phase 2: double-rAF guarantees the browser has painted the 'from' frame
+    // before we apply the 'to' values. Single rAF can land in the same
+    // composite as the style change above; double-rAF ensures a
+    // full frame boundary.
+    dismissRafRef.current = requestAnimationFrame(() => {
+      dismissRafRef.current = requestAnimationFrame(() => {
+        if (!pillRef.current) return;
+        pillRef.current.style.transition = `transform ${DISMISS_MS}ms ease-in-out, opacity ${DISMISS_MS}ms ease-in-out`;
+        pillRef.current.style.transform = "scale(0.6)";
+        pillRef.current.style.opacity = "0";
+      });
+    });
     dismissTimerRef.current = setTimeout(() => {
       dismissTimerRef.current = null;
       if (pillRef.current) {
@@ -197,7 +215,7 @@ export default function AppPage(): React.JSX.Element {
       setState("idle");
       setMessage("");
       setPartialText("");
-    }, DISMISS_MS);
+    }, DISMISS_MS + 50); // +50ms buffer to let animation finish
   }, []);
 
   // -- Start recording --
@@ -208,6 +226,7 @@ export default function AppPage(): React.JSX.Element {
       clearTimeout(dismissTimerRef.current);
       dismissTimerRef.current = null;
     }
+    cancelAnimationFrame(dismissRafRef.current);
     if (pillRef.current) {
       pillRef.current.style.transition = "";
       pillRef.current.style.transform = "";
@@ -540,43 +559,43 @@ export default function AppPage(): React.JSX.Element {
             } as React.CSSProperties
           }
         >
-          {/* Persistent orb — never unmounts, only props change */}
-          {state !== "idle" && (
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                overflow: "hidden",
-                flexShrink: 0,
-              }}
-            >
-              <Orb
-                colors={
-                  state === "error"
-                    ? ["#DD6E4E", "#B85C3A"]
+          {/* Orb — always mounted to avoid WebGL context teardown/recreate.
+              Hidden in idle via width:0 so it doesn't affect pill layout. */}
+          <div
+            style={{
+              width: state === "idle" ? 0 : 32,
+              height: 32,
+              borderRadius: "50%",
+              overflow: "hidden",
+              flexShrink: 0,
+              transition: "width 150ms ease",
+            }}
+          >
+            <Orb
+              colors={
+                state === "error"
+                  ? ["#DD6E4E", "#B85C3A"]
+                  : state === "transcribing"
+                    ? ["#60A5FA", "#3B82F6"]
+                    : state === "initializing"
+                      ? ["#FBBF24", "#F59E0B"]
+                      : ["#8AB62A", "#6B8F12"]
+              }
+              agentState={
+                state === "initializing"
+                  ? "talking"
+                  : state === "recording"
+                    ? "listening"
                     : state === "transcribing"
-                      ? ["#60A5FA", "#3B82F6"]
-                      : state === "initializing"
-                        ? ["#FBBF24", "#F59E0B"]
-                        : ["#8AB62A", "#6B8F12"]
-                }
-                agentState={
-                  state === "initializing"
-                    ? "talking"
-                    : state === "recording"
-                      ? "listening"
-                      : state === "transcribing"
-                        ? "talking"
-                        : null
-                }
-                getInputVolume={
-                  state === "recording" ? getInputVolume : undefined
-                }
-                className="h-full w-full"
-              />
-            </div>
-          )}
+                      ? "talking"
+                      : null
+              }
+              getInputVolume={
+                state === "recording" ? getInputVolume : undefined
+              }
+              className="h-full w-full"
+            />
+          </div>
 
           {/* Right-side content changes per state */}
           {state === "initializing" && (
