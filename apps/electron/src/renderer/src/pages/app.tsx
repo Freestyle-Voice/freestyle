@@ -29,8 +29,8 @@ type PillState =
   | "transcribing"
   | "error";
 
-const EXIT_COLLAPSE_MS = 35; // pill collapses to orb
-const EXIT_SHRINK_MS = 170; // orb shrinks to zero
+const EXIT_COLLAPSE_MS = 40; // pill collapses to orb
+const EXIT_SHRINK_MS = 180; // orb shrinks to zero (overlaps with collapse)
 
 // ---------------------------------------------------------------------------
 // Sound system — generates short sine-wave tones via Web Audio API.
@@ -198,29 +198,27 @@ export default function AppPage(): React.JSX.Element {
     }
     const pill = wrapper.firstElementChild as HTMLElement | null;
     if (pill) {
-      // Step 1: instantly hide text
+      // Instantly hide text
       for (let i = 1; i < pill.children.length; i++) {
         (pill.children[i] as HTMLElement).style.display = "none";
       }
-      // Step 2: smoothly collapse pill to orb width over 35ms
+      // Collapse pill to orb width (40ms transition)
       pill.style.transition = `min-width ${EXIT_COLLAPSE_MS}ms ease-out, max-width ${EXIT_COLLAPSE_MS}ms ease-out, gap ${EXIT_COLLAPSE_MS}ms ease-out`;
       pill.style.minWidth = "52px";
       pill.style.maxWidth = "52px";
       pill.style.justifyContent = "center";
       pill.style.gap = "0";
     }
-    // Step 3: after collapse, shrink orb+pill away
-    setTimeout(() => {
-      wrapper.classList.add("pill-exit");
-    }, EXIT_COLLAPSE_MS);
+    // Start shrink simultaneously — the ease-in curve means the first
+    // ~40ms of the 180ms shrink is barely perceptible (only ~5% scale
+    // change), so the collapse visually completes before the shrink
+    // becomes noticeable. No gap, no separate setTimeout.
+    wrapper.classList.add("pill-exit");
 
-    exitTimerRef.current = setTimeout(
-      () => {
-        exitTimerRef.current = null;
-        window.api.hidePill();
-      },
-      EXIT_COLLAPSE_MS + EXIT_SHRINK_MS + 50,
-    );
+    exitTimerRef.current = setTimeout(() => {
+      exitTimerRef.current = null;
+      window.api.hidePill();
+    }, EXIT_SHRINK_MS + 50);
   }, [goIdle]);
 
   // -- Start recording --
