@@ -29,8 +29,7 @@ type PillState =
   | "transcribing"
   | "error";
 
-const EXIT_PAUSE_MS = 30; // pause after text removed before collapse starts
-const EXIT_COLLAPSE_MS = 50; // pill collapses to orb
+const EXIT_COLLAPSE_MS = 80; // pill collapses to orb
 const EXIT_SHRINK_MS = 150; // orb shrinks to zero
 
 // ---------------------------------------------------------------------------
@@ -203,30 +202,24 @@ export default function AppPage(): React.JSX.Element {
       for (let i = 1; i < pill.children.length; i++) {
         (pill.children[i] as HTMLElement).style.display = "none";
       }
-      // Collapse pill to orb width with a short delay so the user
-      // sees the text vanish, then the pill closes around the orb
-      pill.style.transition = [
-        `min-width ${EXIT_COLLAPSE_MS}ms ease-out ${EXIT_PAUSE_MS}ms`,
-        `max-width ${EXIT_COLLAPSE_MS}ms ease-out ${EXIT_PAUSE_MS}ms`,
-        `gap ${EXIT_COLLAPSE_MS}ms ease-out ${EXIT_PAUSE_MS}ms`,
-      ].join(", ");
+      // Collapse pill to orb width over 80ms — starts same frame as text removal
+      pill.style.transition = `min-width ${EXIT_COLLAPSE_MS}ms ease-out, max-width ${EXIT_COLLAPSE_MS}ms ease-out, gap ${EXIT_COLLAPSE_MS}ms ease-out`;
       pill.style.minWidth = "52px";
       pill.style.maxWidth = "52px";
       pill.style.justifyContent = "center";
       pill.style.gap = "0";
     }
-    // Start shrink after pause + collapse
-    const shrinkDelay = EXIT_PAUSE_MS + EXIT_COLLAPSE_MS;
+    // Start shrink after collapse finishes
     setTimeout(() => {
       wrapper.classList.add("pill-exit");
-    }, shrinkDelay);
+    }, EXIT_COLLAPSE_MS);
 
     exitTimerRef.current = setTimeout(
       () => {
         exitTimerRef.current = null;
         window.api.hidePill();
       },
-      shrinkDelay + EXIT_SHRINK_MS + 50,
+      EXIT_COLLAPSE_MS + EXIT_SHRINK_MS + 50,
     );
   }, [goIdle]);
 
