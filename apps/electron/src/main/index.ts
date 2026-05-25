@@ -8,8 +8,8 @@ import { serve } from "@hono/node-server";
 import {
   app,
   BrowserWindow,
-  globalShortcut,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
