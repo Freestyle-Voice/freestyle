@@ -2,15 +2,12 @@ import { Orb } from "@renderer/components/ui/orb";
 import { getApiBase } from "@renderer/lib/api";
 import { Recorder } from "@renderer/lib/recorder";
 import { Streamer } from "@renderer/lib/streamer";
-import { Check, Mic } from "lucide-react";
+import { Mic } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const BARS = 14;
 const RISE = 0.55;
 const FALL = 0.22;
-const DISMISS_COLLAPSE_MS = 250; // phase 1: text fade + width collapse
-const DISMISS_SHRINK_MS = 200; // phase 2: orb scale down + fade out
-const DISMISS_MS = DISMISS_COLLAPSE_MS + DISMISS_SHRINK_MS; // total
 const SVG_WIDTH = 140;
 const SVG_HEIGHT = 28;
 
@@ -30,7 +27,6 @@ type PillState =
   | "initializing"
   | "recording"
   | "transcribing"
-  | "pasted"
   | "error";
 
 // ---------------------------------------------------------------------------
@@ -103,7 +99,6 @@ export default function AppPage(): React.JSX.Element {
   const wantsMicRef = useRef(false);
   const appContextRef = useRef<string | null>(null);
   const micWarmedUp = useRef(false); // true after first successful getUserMedia
-  const pillRef = useRef<HTMLDivElement>(null); // for dismiss animation DOM manipulation
 
   const getInputVolume = useCallback(() => volumeRef.current, []);
 
@@ -171,98 +166,16 @@ export default function AppPage(): React.JSX.Element {
     setElapsed(0);
   }, []);
 
-  // Dismiss animation: shrink + fade the pill, then hide the window.
-  // We do NOT change the pill state to "dismissing" — that would remove
-  // the text content (pasted/error/etc) and cause a visual jump. Instead
-  // we keep the current visual state and only apply an inline CSS
-  // transform+opacity animation via the DOM ref.
-  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const dismissRafRef = useRef(0);
-
-  const dismissPill = useCallback(() => {
-    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-    cancelAnimationFrame(dismissRafRef.current);
-    const el = pillRef.current;
-    if (!el) {
-      setState("idle");
-      setMessage("");
-      setPartialText("");
-      return;
-    }
-
-    // -- Phase 1: fade out text content, collapse width to orb --
-    // Set initial state (no transition yet)
-    el.style.transition = "none";
-    el.style.transform = "scale(1)";
-    el.style.opacity = "1";
-    el.style.minWidth = `${el.offsetWidth}px`; // lock current width
-
-    // Fade out all children except the orb (first child)
-    const children = el.children;
-    for (let i = 1; i < children.length; i++) {
-      const child = children[i] as HTMLElement;
-      child.style.transition = `opacity ${DISMISS_COLLAPSE_MS * 0.6}ms ease-out`;
-      child.style.opacity = "1";
-    }
-
-    // Double-rAF to guarantee the 'from' frame is painted
-    dismissRafRef.current = requestAnimationFrame(() => {
-      dismissRafRef.current = requestAnimationFrame(() => {
-        if (!pillRef.current) return;
-        // Collapse: fade text, shrink width to orb size
-        const pill = pillRef.current;
-        pill.style.transition = `min-width ${DISMISS_COLLAPSE_MS}ms ease-in-out, padding ${DISMISS_COLLAPSE_MS}ms ease-in-out`;
-        pill.style.minWidth = "52px"; // orb (32) + padding (20)
-        pill.style.padding = "0 10px";
-        for (let i = 1; i < children.length; i++) {
-          (children[i] as HTMLElement).style.opacity = "0";
-        }
-
-        // -- Phase 2: after collapse, scale down + fade out --
-        setTimeout(() => {
-          if (!pillRef.current) return;
-          pillRef.current.style.transition = `transform ${DISMISS_SHRINK_MS}ms ease-in-out, opacity ${DISMISS_SHRINK_MS}ms ease-in-out`;
-          pillRef.current.style.transform = "scale(0.5)";
-          pillRef.current.style.opacity = "0";
-        }, DISMISS_COLLAPSE_MS);
-      });
-    });
-
-    // Final cleanup: reset all inline styles and go to idle
-    dismissTimerRef.current = setTimeout(() => {
-      dismissTimerRef.current = null;
-      if (pillRef.current) {
-        pillRef.current.style.cssText = "";
-        const kids = pillRef.current.children;
-        for (let i = 1; i < kids.length; i++) {
-          (kids[i] as HTMLElement).style.cssText = "";
-        }
-      }
-      setState("idle");
-      setMessage("");
-      setPartialText("");
-    }, DISMISS_MS + 50);
+  // Go back to idle and let the hide-pill effect handle window visibility
+  const goIdle = useCallback(() => {
+    setState("idle");
+    setMessage("");
+    setPartialText("");
   }, []);
 
   // -- Start recording --
   const startRecording = useCallback(async () => {
     if (wantsMicRef.current) return; // Already recording
-    // Cancel any pending dismiss animation and reset inline styles
-    if (dismissTimerRef.current) {
-      clearTimeout(dismissTimerRef.current);
-      dismissTimerRef.current = null;
-    }
-    cancelAnimationFrame(dismissRafRef.current);
-    // Reset any dismiss animation inline styles
-    const el = pillRef.current;
-    if (el) {
-      el.style.cssText = "";
-      const kids = el.children;
-      for (let i = 1; i < kids.length; i++) {
-        (kids[i] as HTMLElement).style.cssText = "";
-      }
-    }
     wantsMicRef.current = true;
     setMessage("");
     setPartialText("");
@@ -330,12 +243,8 @@ export default function AppPage(): React.JSX.Element {
 
             if (text.trim()) {
               await window.api.pasteText(text);
-              setState("pasted");
-              setMessage(text.length > 40 ? `${text.slice(0, 40)}...` : text);
-              setTimeout(() => dismissPill(), 1200);
-            } else {
-              dismissPill();
             }
+            goIdle();
           },
           onError: (msg) => {
             // Clean up on streaming error
@@ -344,7 +253,7 @@ export default function AppPage(): React.JSX.Element {
             recorderRef.current.cancel();
             setState("error");
             setMessage(msg);
-            setTimeout(() => dismissPill(), 2000);
+            setTimeout(() => goIdle(), 2000);
           },
         });
         streamerRef.current = streamer;
@@ -360,9 +269,9 @@ export default function AppPage(): React.JSX.Element {
       wantsMicRef.current = false;
       setState("error");
       setMessage(err instanceof Error ? err.message : "Mic access denied");
-      setTimeout(() => dismissPill(), 2000);
+      setTimeout(() => goIdle(), 2000);
     }
-  }, [startVisualization, dismissPill]);
+  }, [startVisualization, goIdle]);
 
   // -- Commit: stop recording and transcribe --
   const commitRecording = useCallback(async () => {
@@ -403,7 +312,7 @@ export default function AppPage(): React.JSX.Element {
       if (recorderRef.current.isRecording()) {
         wavBlob = await recorderRef.current.stop();
       } else {
-        dismissPill();
+        goIdle();
         return;
       }
 
@@ -428,21 +337,16 @@ export default function AppPage(): React.JSX.Element {
       const data = await res.json();
       const text = data.cleaned || data.raw || "";
 
-      if (!text.trim()) {
-        dismissPill();
-        return;
+      if (text.trim()) {
+        await window.api.pasteText(text);
       }
-
-      await window.api.pasteText(text);
-      setState("pasted");
-      setMessage(text.length > 40 ? `${text.slice(0, 40)}...` : text);
-      setTimeout(() => dismissPill(), 1200);
+      goIdle();
     } catch (err) {
       setState("error");
       setMessage(err instanceof Error ? err.message : "Transcription failed");
-      setTimeout(() => dismissPill(), 2000);
+      setTimeout(() => goIdle(), 2000);
     }
-  }, [useStreaming, stopVisualization, dismissPill]);
+  }, [useStreaming, stopVisualization, goIdle]);
 
   const cancelRecording = useCallback(() => {
     wantsMicRef.current = false;
@@ -489,12 +393,7 @@ export default function AppPage(): React.JSX.Element {
       // Allow starting from idle, or from terminal states that the pill
       // may still be displaying (transcribing/pasted/error) when the
       // user presses the hotkey again before the auto-dismiss fires.
-      if (
-        s === "idle" ||
-        s === "transcribing" ||
-        s === "pasted" ||
-        s === "error"
-      ) {
+      if (s === "idle" || s === "transcribing" || s === "error") {
         startRecording();
       }
     });
@@ -532,11 +431,9 @@ export default function AppPage(): React.JSX.Element {
         ? "glow-recording"
         : state === "transcribing"
           ? "glow-transcribing"
-          : state === "pasted"
-            ? "glow-pasted"
-            : state === "error"
-              ? "glow-error"
-              : "glow-idle";
+          : state === "error"
+            ? "glow-error"
+            : "glow-idle";
 
   return (
     <div
@@ -564,14 +461,12 @@ export default function AppPage(): React.JSX.Element {
           .glow-initializing { animation: glow-pulse-amber 1s ease-in-out infinite; }
           .glow-recording { animation: glow-pulse-green 2s ease-in-out infinite; }
           .glow-transcribing { animation: glow-pulse-blue 1.5s ease-in-out infinite; }
-          .glow-pasted { box-shadow: 0 0 10px 3px rgba(138,182,42,0.12); transition: box-shadow 300ms ease; }
           .glow-error { animation: glow-pulse-red 1.5s ease-in-out infinite; }
           .glow-idle { box-shadow: 0 0 6px 2px rgba(161,161,170,0.05); transition: box-shadow 300ms ease; }
         `}
       </style>
       <div className={glowState} style={{ borderRadius: 28 }}>
         <div
-          ref={pillRef}
           className="inline-flex items-center gap-3"
           style={
             {
@@ -590,43 +485,43 @@ export default function AppPage(): React.JSX.Element {
             } as React.CSSProperties
           }
         >
-          {/* Orb — always mounted to avoid WebGL context teardown/recreate.
-              Hidden in idle via width:0 so it doesn't affect pill layout. */}
-          <div
-            style={{
-              width: state === "idle" ? 0 : 32,
-              height: 32,
-              borderRadius: "50%",
-              overflow: "hidden",
-              flexShrink: 0,
-              transition: "width 150ms ease",
-            }}
-          >
-            <Orb
-              colors={
-                state === "error"
-                  ? ["#DD6E4E", "#B85C3A"]
-                  : state === "transcribing"
-                    ? ["#60A5FA", "#3B82F6"]
-                    : state === "initializing"
-                      ? ["#FBBF24", "#F59E0B"]
-                      : ["#8AB62A", "#6B8F12"]
-              }
-              agentState={
-                state === "initializing"
-                  ? "talking"
-                  : state === "recording"
-                    ? "listening"
+          {/* Orb — conditionally rendered per state */}
+          {state !== "idle" && (
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                overflow: "hidden",
+                flexShrink: 0,
+              }}
+            >
+              <Orb
+                colors={
+                  state === "error"
+                    ? ["#DD6E4E", "#B85C3A"]
                     : state === "transcribing"
-                      ? "talking"
-                      : null
-              }
-              getInputVolume={
-                state === "recording" ? getInputVolume : undefined
-              }
-              className="h-full w-full"
-            />
-          </div>
+                      ? ["#60A5FA", "#3B82F6"]
+                      : state === "initializing"
+                        ? ["#FBBF24", "#F59E0B"]
+                        : ["#8AB62A", "#6B8F12"]
+                }
+                agentState={
+                  state === "initializing"
+                    ? "talking"
+                    : state === "recording"
+                      ? "listening"
+                      : state === "transcribing"
+                        ? "talking"
+                        : null
+                }
+                getInputVolume={
+                  state === "recording" ? getInputVolume : undefined
+                }
+                className="h-full w-full"
+              />
+            </div>
+          )}
 
           {/* Right-side content changes per state */}
           {state === "initializing" && (
@@ -699,21 +594,6 @@ export default function AppPage(): React.JSX.Element {
           {state === "transcribing" && (
             <span style={pillTextStyle}>
               {partialText ? partialText.slice(-30) : "Transcribing..."}
-            </span>
-          )}
-
-          {state === "pasted" && (
-            <span style={pillTextStyle}>
-              <Check
-                size={14}
-                style={{
-                  color: "#8AB62A",
-                  display: "inline",
-                  verticalAlign: "middle",
-                  marginRight: 4,
-                }}
-              />
-              {message || "Pasted"}
             </span>
           )}
 
