@@ -8,7 +8,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const BARS = 14;
 const RISE = 0.55;
 const FALL = 0.22;
-const DISMISS_MS = 400; // closing animation duration
+const DISMISS_COLLAPSE_MS = 250; // phase 1: text fade + width collapse
+const DISMISS_SHRINK_MS = 200; // phase 2: orb scale down + fade out
+const DISMISS_MS = DISMISS_COLLAPSE_MS + DISMISS_SHRINK_MS; // total
 const SVG_WIDTH = 140;
 const SVG_HEIGHT = 28;
 
@@ -183,39 +185,71 @@ export default function AppPage(): React.JSX.Element {
     cancelAnimationFrame(dismissRafRef.current);
     const el = pillRef.current;
     if (!el) {
-      // No DOM element — just hide immediately
       setState("idle");
       setMessage("");
       setPartialText("");
       return;
     }
-    // Phase 1: set 'from' state and the transition property
+
+    // -- Phase 1: fade out text content, collapse width to orb --
+    // Set initial state (no transition yet)
     el.style.transition = "none";
     el.style.transform = "scale(1)";
     el.style.opacity = "1";
-    // Phase 2: double-rAF guarantees the browser has painted the 'from' frame
-    // before we apply the 'to' values. Single rAF can land in the same
-    // composite as the style change above; double-rAF ensures a
-    // full frame boundary.
+    el.style.minWidth = `${el.offsetWidth}px`; // lock current width
+
+    // Fade out all children except the orb (first child)
+    const children = el.children;
+    for (let i = 1; i < children.length; i++) {
+      const child = children[i] as HTMLElement;
+      child.style.transition = `opacity ${DISMISS_COLLAPSE_MS * 0.6}ms ease-out`;
+      child.style.opacity = "1";
+    }
+
+    // Double-rAF to guarantee the 'from' frame is painted
     dismissRafRef.current = requestAnimationFrame(() => {
       dismissRafRef.current = requestAnimationFrame(() => {
         if (!pillRef.current) return;
-        pillRef.current.style.transition = `transform ${DISMISS_MS}ms ease-in-out, opacity ${DISMISS_MS}ms ease-in-out`;
-        pillRef.current.style.transform = "scale(0.6)";
-        pillRef.current.style.opacity = "0";
+        // Collapse: fade text, shrink width to orb size
+        const pill = pillRef.current;
+        pill.style.transition = `min-width ${DISMISS_COLLAPSE_MS}ms ease-in-out, padding ${DISMISS_COLLAPSE_MS}ms ease-in-out`;
+        pill.style.minWidth = "52px"; // orb (32) + padding (20)
+        pill.style.padding = "0 10px";
+        for (let i = 1; i < children.length; i++) {
+          (children[i] as HTMLElement).style.opacity = "0";
+        }
+
+        // -- Phase 2: after collapse, scale down + fade out --
+        setTimeout(() => {
+          if (!pillRef.current) return;
+          pillRef.current.style.transition = `transform ${DISMISS_SHRINK_MS}ms ease-in-out, opacity ${DISMISS_SHRINK_MS}ms ease-in-out`;
+          pillRef.current.style.transform = "scale(0.5)";
+          pillRef.current.style.opacity = "0";
+        }, DISMISS_COLLAPSE_MS);
       });
     });
+
+    // Final cleanup: reset all inline styles and go to idle
     dismissTimerRef.current = setTimeout(() => {
       dismissTimerRef.current = null;
       if (pillRef.current) {
         pillRef.current.style.transition = "";
         pillRef.current.style.transform = "";
         pillRef.current.style.opacity = "";
+        pillRef.current.style.minWidth = "";
+        pillRef.current.style.padding = "";
+        // Reset children styles
+        const kids = pillRef.current.children;
+        for (let i = 1; i < kids.length; i++) {
+          const child = kids[i] as HTMLElement;
+          child.style.transition = "";
+          child.style.opacity = "";
+        }
       }
       setState("idle");
       setMessage("");
       setPartialText("");
-    }, DISMISS_MS + 50); // +50ms buffer to let animation finish
+    }, DISMISS_MS + 50);
   }, []);
 
   // -- Start recording --
@@ -231,6 +265,14 @@ export default function AppPage(): React.JSX.Element {
       pillRef.current.style.transition = "";
       pillRef.current.style.transform = "";
       pillRef.current.style.opacity = "";
+      pillRef.current.style.minWidth = "";
+      pillRef.current.style.padding = "";
+      const kids = pillRef.current.children;
+      for (let i = 1; i < kids.length; i++) {
+        const child = kids[i] as HTMLElement;
+        child.style.transition = "";
+        child.style.opacity = "";
+      }
     }
     wantsMicRef.current = true;
     setMessage("");
