@@ -40,5 +40,5 @@ appImage:
 npmRebuild: false
 publish:
   provider: github
-  owner: MathurAditya724
+  owner: freestyle-voice
   repo: freestyle

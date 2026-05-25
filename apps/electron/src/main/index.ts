@@ -1,5 +1,7 @@
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, realpathSync, statSync } from "node:fs";
 import type { Server } from "node:http";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import server from "@freestyle/server";
@@ -40,6 +42,57 @@ let tray: Tray | null = null;
 let keyListener: GlobalKeyboardListener | null = null;
 let hotkeyPressed = false;
 let currentHotkeyAccel: string | null = null;
+
+/**
+ * Ensure the MacKeyServer binary from node-global-key-listener is executable
+ * and ad-hoc signed. Without a stable cdhash the macOS TCC subsystem cannot
+ * persist Accessibility grants — the user approves access but it never sticks.
+ * Also strips quarantine/provenance xattrs and sets the execute bit.
+ *
+ * This mirrors the postinstall script but runs at app launch as a safety net
+ * (e.g. the binary was replaced by a package manager update).
+ */
+function ensureMacKeyServerExecutable(): void {
+  if (process.platform !== "darwin") return;
+  try {
+    const pkgPath = require.resolve("node-global-key-listener/package.json");
+    const candidate = join(dirname(pkgPath), "bin", "MacKeyServer");
+    if (!existsSync(candidate)) return;
+    const binPath = realpathSync(candidate);
+
+    // Set execute bit if missing
+    try {
+      if (!(statSync(binPath).mode & 0o111)) {
+        chmodSync(binPath, 0o755);
+        console.log("[hotkey] Set execute permission on MacKeyServer.");
+      }
+    } catch (err) {
+      console.warn("[hotkey] chmod failed:", err);
+    }
+
+    // Strip quarantine / provenance xattrs (best-effort)
+    for (const attr of ["com.apple.quarantine", "com.apple.provenance"]) {
+      spawnSync("xattr", ["-d", attr, binPath], { stdio: "ignore" });
+    }
+
+    // Ad-hoc codesign so TCC grants persist (stable cdhash)
+    const result = spawnSync(
+      "codesign",
+      ["--sign", "-", "--force", "--preserve-metadata=entitlements", binPath],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    if (result.status === 0) {
+      console.log("[hotkey] Ad-hoc signed MacKeyServer binary.");
+    } else {
+      console.warn(
+        `[hotkey] codesign failed (exit ${result.status}):`,
+        result.stderr?.toString().trim(),
+      );
+    }
+  } catch (err) {
+    console.warn("[hotkey] Could not fix MacKeyServer permissions:", err);
+  }
+}
 
 // Register a custom app:// protocol that serves the renderer files.
 // All non-file paths fall back to index.html so BrowserRouter works in production.
@@ -578,17 +631,42 @@ app.whenReady().then(() => {
   ipcMain.on("hotkey-record:start", () => {
     // Kill any existing recording listener
     if (recordingListener) {
-      recordingListener.kill();
+      try {
+        recordingListener.kill();
+      } catch {
+        /* ignore */
+      }
       recordingListener = null;
     }
 
     // Pause the active hotkey listener so it doesn't fire during recording
     if (keyListener) {
-      keyListener.kill();
+      try {
+        keyListener.kill();
+      } catch {
+        /* ignore */
+      }
       keyListener = null;
     }
 
-    recordingListener = new GlobalKeyboardListener();
+    // Ensure binary is executable / signed before starting recording listener
+    ensureMacKeyServerExecutable();
+
+    try {
+      recordingListener = new GlobalKeyboardListener();
+    } catch (err) {
+      console.error("[hotkey] Failed to create recording listener:", err);
+      settingsWindow?.webContents.send("hotkey-record:cancel");
+      settingsWindow?.webContents.send("hotkey:error", {
+        message:
+          "Could not start the key listener for recording. " +
+          "Please check Accessibility permissions in System Settings.",
+      });
+      // Re-register the primary hotkey listener
+      registerHotkey(currentHotkeyAccel ?? undefined);
+      return;
+    }
+
     recordingListener.addListener(
       (e: IGlobalKeyEvent, isDown: IGlobalKeyDownMap) => {
         if (e.state !== "DOWN") return;
@@ -647,7 +725,11 @@ app.whenReady().then(() => {
         // Escape cancels recording
         if (keyName === "ESCAPE") {
           settingsWindow?.webContents.send("hotkey-record:cancel");
-          recordingListener?.kill();
+          try {
+            recordingListener?.kill();
+          } catch {
+            /* ignore */
+          }
           recordingListener = null;
           // Re-register the hotkey listener
           registerHotkey(currentHotkeyAccel ?? undefined);
@@ -663,7 +745,11 @@ app.whenReady().then(() => {
         });
 
         // Stop listening after capture (hotkey re-registered when user saves/cancels via hotkey-record:stop)
-        recordingListener?.kill();
+        try {
+          recordingListener?.kill();
+        } catch {
+          /* ignore */
+        }
         recordingListener = null;
       },
     );
@@ -671,7 +757,11 @@ app.whenReady().then(() => {
 
   ipcMain.on("hotkey-record:stop", () => {
     if (recordingListener) {
-      recordingListener.kill();
+      try {
+        recordingListener.kill();
+      } catch {
+        /* ignore */
+      }
       recordingListener = null;
     }
     // Re-register the hotkey listener
@@ -805,6 +895,9 @@ app.whenReady().then(() => {
     }
   });
 
+  // Fix MacKeyServer binary permissions / codesign before first use
+  ensureMacKeyServerExecutable();
+
   // Register hold-to-record hotkey via node-global-key-listener
   registerHotkey();
 
@@ -937,7 +1030,11 @@ function loadHotkeyFromDB(): string | undefined {
 function registerHotkey(hotkey?: string): void {
   // Tear down previous listener
   if (keyListener) {
-    keyListener.kill();
+    try {
+      keyListener.kill();
+    } catch {
+      /* ignore */
+    }
     keyListener = null;
   }
   hotkeyPressed = false;
@@ -950,7 +1047,21 @@ function registerHotkey(hotkey?: string): void {
   currentHotkeyAccel = accel;
   const { modifiers, key: triggerKey } = parseAccelerator(accel);
 
-  keyListener = new GlobalKeyboardListener();
+  try {
+    keyListener = new GlobalKeyboardListener();
+  } catch (err) {
+    console.error("[hotkey] Failed to create GlobalKeyboardListener:", err);
+    keyListener = null;
+    const errorPayload = {
+      message:
+        "Could not start the global key listener. " +
+        "Please check that Accessibility permissions are granted in " +
+        "System Settings > Privacy & Security > Accessibility.",
+    };
+    mainWindow?.webContents.send("hotkey:error", errorPayload);
+    settingsWindow?.webContents.send("hotkey:error", errorPayload);
+    return;
+  }
 
   const listener = (
     e: IGlobalKeyEvent,
@@ -974,13 +1085,27 @@ function registerHotkey(hotkey?: string): void {
     }
   };
 
-  keyListener.addListener(listener);
+  try {
+    keyListener.addListener(listener);
+  } catch (err) {
+    console.error("[hotkey] Failed to add key listener:", err);
+    keyListener = null;
+    const errorPayload = {
+      message: "Failed to register the hotkey listener.",
+    };
+    mainWindow?.webContents.send("hotkey:error", errorPayload);
+    settingsWindow?.webContents.send("hotkey:error", errorPayload);
+  }
 }
 
 // Clean up key listener on quit
 app.on("will-quit", () => {
   if (keyListener) {
-    keyListener.kill();
+    try {
+      keyListener.kill();
+    } catch {
+      /* ignore */
+    }
     keyListener = null;
   }
 });

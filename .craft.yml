@@ -1,0 +1,26 @@
+# Craft Release Configuration
+# https://craft.sentry.dev/configuration/
+
+minVersion: "2.21.1"
+
+versioning:
+  policy: auto
+
+changelog:
+  filePath: CHANGELOG.md
+  policy: auto
+
+preReleaseCommand: bash scripts/bump-version.sh
+
+artifactProvider:
+  name: github
+  config:
+    artifacts:
+      Build & Test:
+        - "linux-builds"
+        - "mac-builds"
+        - "windows-builds"
+
+targets:
+  - name: github
+    includeNames: /^.*\.(dmg|zip|exe|msi|AppImage|deb|snap|yml|blockmap)$/

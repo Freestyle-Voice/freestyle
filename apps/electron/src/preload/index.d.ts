@@ -40,6 +40,10 @@ declare global {
       // Pill position
       getPillPosition: () => Promise<string>;
       setPillPosition: (position: string) => void;
+      // Hotkey error notifications
+      onHotkeyError: (
+        callback: (error: { message: string }) => void,
+      ) => () => void;
     };
   }
 }

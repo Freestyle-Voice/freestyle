@@ -85,6 +85,15 @@ const api = {
     ipcRenderer.invoke("settings:pill-position"),
   setPillPosition: (position: string): void =>
     ipcRenderer.send("settings:set-pill-position", position),
+  // Hotkey error notifications
+  onHotkeyError: (
+    callback: (error: { message: string }) => void,
+  ): (() => void) => {
+    const handler = (_: unknown, error: { message: string }): void =>
+      callback(error);
+    ipcRenderer.on("hotkey:error", handler);
+    return () => ipcRenderer.removeListener("hotkey:error", handler);
+  },
 };
 
 // Use `contextBridge` APIs to expose Electron APIs to

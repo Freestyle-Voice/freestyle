@@ -1,133 +1,45 @@
-name: Release
+# Release workflow using Craft
+# https://craft.sentry.dev/
 
+name: Release
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+    inputs:
+      version:
+        description: 'Version to release (semver, "auto", "major", "minor", "patch")'
+        required: false
+        default: "auto"
+      force:
+        description: Force a release even when there are release-blockers
+        required: false
+      merge_target:
+        description: Target branch to merge into
+        required: false
 
-concurrency:
-  group: release-${{ github.ref_name }}
-  cancel-in-progress: false
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
-  build-linux:
-    name: Build (Linux)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: "package.json"
-          cache: "pnpm"
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Build server
-        run: pnpm --filter @freestyle/server build
-
-      - name: Build electron (Linux)
-        working-directory: apps/electron
-        run: pnpm run build:linux
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-builds
-          path: |
-            apps/electron/dist/*.AppImage
-            apps/electron/dist/*.deb
-            apps/electron/dist/*.snap
-          if-no-files-found: warn
-
-  build-mac:
-    name: Build (macOS)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: "package.json"
-          cache: "pnpm"
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Build server
-        run: pnpm --filter @freestyle/server build
-
-      - name: Build electron (macOS)
-        working-directory: apps/electron
-        run: pnpm run build:mac
-        env:
-          CSC_LINK: ${{ secrets.MAC_CERTS }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-builds
-          path: |
-            apps/electron/dist/*.dmg
-            apps/electron/dist/*.zip
-          if-no-files-found: warn
-
-  build-windows:
-    name: Build (Windows)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: "package.json"
-          cache: "pnpm"
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Build server
-        run: pnpm --filter @freestyle/server build
-
-      - name: Build electron (Windows)
-        working-directory: apps/electron
-        run: pnpm run build:win
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-builds
-          path: |
-            apps/electron/dist/*.exe
-            apps/electron/dist/*.msi
-          if-no-files-found: warn
-
   release:
-    name: Create Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-linux, build-mac, build-windows]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    name: Release a new version
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          path: artifacts
-          merge-multiple: true
+          fetch-depth: 0
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
         with:
-          draft: true
-          generate_release_notes: true
-          files: artifacts/*
+          node-version-file: "package.json"
+          cache: "pnpm"
+
+      - uses: getsentry/craft@v2
+        with:
+          version: ${{ inputs.version }}
+          force: ${{ inputs.force }}
+          merge_target: ${{ inputs.merge_target }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

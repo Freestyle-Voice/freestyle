@@ -1,0 +1,161 @@
+# Build workflow: produces artifacts for Craft releases
+# Triggered on push to main/release branches and PRs
+
+name: Build & Test
+on:
+  push:
+    branches:
+      - main
+      - "release/**"
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: build-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: "package.json"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Biome check
+        run: pnpm biome check .
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: "package.json"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck electron (web)
+        working-directory: apps/electron
+        run: pnpm run typecheck:web
+
+  build-linux:
+    name: Build (Linux)
+    needs: [lint, typecheck]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: "package.json"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build server
+        run: pnpm --filter @freestyle/server build
+
+      - name: Build electron (Linux)
+        working-directory: apps/electron
+        run: pnpm run build:linux
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-builds
+          path: |
+            apps/electron/dist/*.AppImage
+            apps/electron/dist/*.deb
+            apps/electron/dist/*.snap
+            apps/electron/dist/*.yml
+          if-no-files-found: warn
+
+  build-mac:
+    name: Build (macOS)
+    needs: [lint, typecheck]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: "package.json"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build server
+        run: pnpm --filter @freestyle/server build
+
+      - name: Build electron (macOS)
+        working-directory: apps/electron
+        run: pnpm run build:mac
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-builds
+          path: |
+            apps/electron/dist/*.dmg
+            apps/electron/dist/*.zip
+            apps/electron/dist/*.yml
+            apps/electron/dist/*.blockmap
+          if-no-files-found: warn
+
+  build-windows:
+    name: Build (Windows)
+    needs: [lint, typecheck]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: "package.json"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build server
+        run: pnpm --filter @freestyle/server build
+
+      - name: Build electron (Windows)
+        working-directory: apps/electron
+        run: pnpm run build:win
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-builds
+          path: |
+            apps/electron/dist/*.exe
+            apps/electron/dist/*.msi
+            apps/electron/dist/*.yml
+            apps/electron/dist/*.blockmap
+          if-no-files-found: warn
