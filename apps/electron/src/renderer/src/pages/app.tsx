@@ -214,13 +214,10 @@ export default function AppPage(): React.JSX.Element {
       wrapper.classList.add("pill-exit");
     }, EXIT_COLLAPSE_MS);
 
-    exitTimerRef.current = setTimeout(
-      () => {
-        exitTimerRef.current = null;
-        window.api.hidePill();
-      },
-      EXIT_COLLAPSE_MS + EXIT_SHRINK_MS + 50,
-    );
+    exitTimerRef.current = setTimeout(() => {
+      exitTimerRef.current = null;
+      window.api.hidePill();
+    }, EXIT_COLLAPSE_MS + EXIT_SHRINK_MS);
   }, [goIdle]);
 
   // -- Start recording --
