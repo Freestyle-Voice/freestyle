@@ -166,8 +166,11 @@ export default function AppPage(): React.JSX.Element {
     setElapsed(0);
   }, []);
 
-  // Hide the pill immediately
+  // Hide the pill and reset to idle so the next show starts clean
   const hidePill = useCallback(() => {
+    setState("idle");
+    setPartialText("");
+    setMessage("");
     window.api.hidePill();
   }, []);
 
@@ -285,7 +288,7 @@ export default function AppPage(): React.JSX.Element {
       recorderRef.current.cancel();
       streamerRef.current?.cancel();
       streamerRef.current = null;
-      window.api.hidePill();
+      hidePill();
       return;
     }
 
@@ -353,8 +356,8 @@ export default function AppPage(): React.JSX.Element {
     streamerRef.current?.cancel();
     streamerRef.current = null;
     recorderRef.current.cancel();
-    window.api.hidePill();
-  }, [stopVisualization]);
+    hidePill();
+  }, [stopVisualization, hidePill]);
 
   // Load sound preference from server settings
   useEffect(() => {
