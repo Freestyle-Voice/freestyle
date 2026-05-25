@@ -202,7 +202,10 @@ export default function AppPage(): React.JSX.Element {
       for (let i = 1; i < pill.children.length; i++) {
         (pill.children[i] as HTMLElement).style.display = "none";
       }
-      // Collapse pill to orb width over 80ms — starts same frame as text removal
+      // Spin the orb during the entire exit
+      const orbContainer = pill.firstElementChild as HTMLElement | null;
+      if (orbContainer) orbContainer.classList.add("pill-exit-spin");
+      // Collapse pill to orb width (100ms transition)
       pill.style.transition = `min-width ${EXIT_COLLAPSE_MS}ms ease-out, max-width ${EXIT_COLLAPSE_MS}ms ease-out, gap ${EXIT_COLLAPSE_MS}ms ease-out`;
       pill.style.minWidth = "52px";
       pill.style.maxWidth = "52px";
@@ -238,6 +241,8 @@ export default function AppPage(): React.JSX.Element {
         pill.style.maxWidth = "";
         pill.style.justifyContent = "";
         pill.style.gap = "";
+        const orbContainer = pill.firstElementChild as HTMLElement | null;
+        if (orbContainer) orbContainer.classList.remove("pill-exit-spin");
         for (let i = 1; i < pill.children.length; i++) {
           (pill.children[i] as HTMLElement).style.display = "";
         }
@@ -530,9 +535,16 @@ export default function AppPage(): React.JSX.Element {
             0%   { transform: scale(1); opacity: 1; }
             100% { transform: scale(0); opacity: 0; }
           }
+          @keyframes orb-spin {
+            0%   { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
           .pill-exit {
             animation: pill-exit-shrink ${EXIT_SHRINK_MS}ms ease-in forwards !important;
             pointer-events: none;
+          }
+          .pill-exit-spin {
+            animation: orb-spin ${EXIT_COLLAPSE_MS + EXIT_SHRINK_MS}ms linear forwards !important;
           }
         `}
       </style>
