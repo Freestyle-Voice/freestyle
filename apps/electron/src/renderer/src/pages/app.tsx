@@ -217,7 +217,8 @@ export default function AppPage(): React.JSX.Element {
 
     // -- Phase 2: after text fades, shrink the whole wrapper --
     exitTimerRef.current = setTimeout(() => {
-      // Set 'from' state on wrapper
+      // Set 'from' state on wrapper, stop any glow animation
+      wrapper.style.animation = "none";
       wrapper.style.transition = "none";
       wrapper.style.transform = "scale(1)";
       wrapper.style.opacity = "1";
@@ -231,27 +232,32 @@ export default function AppPage(): React.JSX.Element {
         });
       });
 
-      // Cleanup after shrink completes
+      // After shrink completes: hide window first, then reset styles.
+      // Going to idle hides the window, so the style reset is invisible.
       exitTimerRef.current = setTimeout(() => {
         exitTimerRef.current = null;
-        // Reset all inline styles
-        if (pillRef.current) {
-          pillRef.current.style.transition = "";
-          pillRef.current.style.transform = "";
-          pillRef.current.style.opacity = "";
-          const innerPill = pillRef.current
-            .firstElementChild as HTMLElement | null;
-          if (innerPill) {
-            const kids = innerPill.children;
-            for (let i = 1; i < kids.length; i++) {
-              (kids[i] as HTMLElement).style.transition = "";
-              (kids[i] as HTMLElement).style.opacity = "";
-            }
-          }
-        }
+        // Hide first
         setState("idle");
         setMessage("");
         setPartialText("");
+        // Reset inline styles after hide (window is already invisible)
+        requestAnimationFrame(() => {
+          if (pillRef.current) {
+            pillRef.current.style.animation = "";
+            pillRef.current.style.transition = "";
+            pillRef.current.style.transform = "";
+            pillRef.current.style.opacity = "";
+            const innerPill = pillRef.current
+              .firstElementChild as HTMLElement | null;
+            if (innerPill) {
+              const kids = innerPill.children;
+              for (let i = 1; i < kids.length; i++) {
+                (kids[i] as HTMLElement).style.transition = "";
+                (kids[i] as HTMLElement).style.opacity = "";
+              }
+            }
+          }
+        });
       }, EXIT_SHRINK_MS + 50);
     }, EXIT_FADE_MS);
   }, [goIdle]);
@@ -267,6 +273,7 @@ export default function AppPage(): React.JSX.Element {
     cancelAnimationFrame(exitRafRef.current);
     // Reset any exit animation inline styles on wrapper and children
     if (pillRef.current) {
+      pillRef.current.style.animation = "";
       pillRef.current.style.transition = "";
       pillRef.current.style.transform = "";
       pillRef.current.style.opacity = "";
