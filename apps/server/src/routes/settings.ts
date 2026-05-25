@@ -59,9 +59,13 @@ settings.delete("/:key", (c) => {
 // Test a local LLM endpoint and return available models
 settings.post("/local-llm/test", async (c) => {
   const body = await c.req.json<{ url: string; api_key?: string }>();
-  const url = body.url?.replace(/\/+$/, "");
+  const url = body.url?.replace(/\/+$/, "").replace(/\/v1$/, "");
   if (!url) {
     return c.json({ error: "URL is required" }, 400);
+  }
+
+  if (!/^https?:\/\//i.test(url)) {
+    return c.json({ error: "URL must start with http:// or https://" }, 400);
   }
 
   try {

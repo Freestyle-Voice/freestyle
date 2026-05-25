@@ -879,48 +879,56 @@ export default function ModelsPage(): React.JSX.Element {
               </div>
             ) : (
               /* Cloud LLM model dropdown (existing) */
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLlmDropdownOpen(!llmDropdownOpen);
-                    setVoiceDropdownOpen(false);
-                    setLlmSearch("");
-                    closePendingKey();
-                  }}
-                  className="border-border hover:bg-secondary flex w-full items-center justify-between rounded-lg border px-4 py-2.5 text-sm"
-                >
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="text-muted-foreground h-4 w-4" />
-                    {defaultLlm && defaultLlm.provider !== "local-llm" ? (
-                      <span>
-                        {defaultLlm.model_name}{" "}
-                        <span className="text-muted-foreground text-xs">
-                          ({displayName(defaultLlm.provider)})
-                        </span>
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">
-                        Select an LLM model...
-                      </span>
-                    )}
+              <div className="space-y-2">
+                {defaultLlm?.provider === "local-llm" && (
+                  <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    Select a cloud model below to switch from local.
                   </div>
-                  <ChevronDown
-                    className={cn(
-                      "text-muted-foreground h-4 w-4 transition-transform",
-                      llmDropdownOpen && "rotate-180",
-                    )}
-                  />
-                </button>
+                )}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLlmDropdownOpen(!llmDropdownOpen);
+                      setVoiceDropdownOpen(false);
+                      setLlmSearch("");
+                      closePendingKey();
+                    }}
+                    className="border-border hover:bg-secondary flex w-full items-center justify-between rounded-lg border px-4 py-2.5 text-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="text-muted-foreground h-4 w-4" />
+                      {defaultLlm && defaultLlm.provider !== "local-llm" ? (
+                        <span>
+                          {defaultLlm.model_name}{" "}
+                          <span className="text-muted-foreground text-xs">
+                            ({displayName(defaultLlm.provider)})
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          Select an LLM model...
+                        </span>
+                      )}
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        "text-muted-foreground h-4 w-4 transition-transform",
+                        llmDropdownOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
 
-                {llmDropdownOpen &&
-                  renderModelDropdown(
-                    llmModelsByProvider,
-                    "llm",
-                    defaultLlm,
-                    llmSearch,
-                    setLlmSearch,
-                  )}
+                  {llmDropdownOpen &&
+                    renderModelDropdown(
+                      llmModelsByProvider,
+                      "llm",
+                      defaultLlm,
+                      llmSearch,
+                      setLlmSearch,
+                    )}
+                </div>
               </div>
             )}
           </>

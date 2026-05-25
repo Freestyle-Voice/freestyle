@@ -47,11 +47,16 @@ const PROVIDER_FACTORIES: Record<
     const urlRow = db
       .prepare("SELECT value FROM settings WHERE key = 'local_llm_url'")
       .get() as { value: string } | undefined;
+    if (!urlRow?.value) {
+      throw new Error(
+        "Local LLM endpoint URL not configured. Go to Settings > Models to set it up.",
+      );
+    }
     const keyRow = db
       .prepare("SELECT value FROM settings WHERE key = 'local_llm_api_key'")
       .get() as { value: string } | undefined;
 
-    const baseURL = urlRow?.value || "http://localhost:11434";
+    const baseURL = urlRow.value.replace(/\/v1\/?$/, "");
     const apiKey = keyRow?.value || "local";
 
     const p = createOpenAI({ apiKey, baseURL: `${baseURL}/v1` });
@@ -118,8 +123,10 @@ export function createTranscriptionModel(providerId: string, modelId: string) {
     throw new Error(`Provider ${providerId} does not support transcription`);
   }
 
-  // The model_id from models.dev is like "openai/whisper-1" -- extract the part after "/"
-  const shortId = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
+  // The model_id is like "openai/whisper-1" -- strip the provider prefix
+  const shortId = modelId.includes("/")
+    ? modelId.slice(modelId.indexOf("/") + 1)
+    : modelId;
   return provider.transcription(shortId);
 }
 
@@ -140,6 +147,8 @@ export function createChatModel(
     throw new Error(`Provider ${providerId} does not support chat`);
   }
 
-  const shortId = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
+  const shortId = modelId.includes("/")
+    ? modelId.slice(modelId.indexOf("/") + 1)
+    : modelId;
   return provider.chat(shortId);
 }

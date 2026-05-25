@@ -25,7 +25,7 @@ async function fetchLocalLlmModels(): Promise<AvailableModel[]> {
     .prepare("SELECT value FROM settings WHERE key = 'local_llm_api_key'")
     .get() as { value: string } | undefined;
 
-  const baseUrl = urlRow.value.replace(/\/+$/, "");
+  const baseUrl = urlRow.value.replace(/\/+$/, "").replace(/\/v1$/, "");
 
   const res = await fetch(`${baseUrl}/v1/models`, {
     headers: {
@@ -234,7 +234,9 @@ models.get("/available", async (c) => {
     try {
       const localModels = await fetchLocalLlmModels();
       available.push(...localModels);
-    } catch {}
+    } catch {
+      // Local LLM server not reachable
+    }
 
     return c.json(available);
   } catch (err) {
