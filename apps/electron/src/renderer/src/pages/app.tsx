@@ -85,6 +85,7 @@ export default function AppPage(): React.JSX.Element {
   const timerRef = useRef<number>(0);
   const wantsMicRef = useRef(false);
   const appContextRef = useRef<string | null>(null);
+  const micWarmedUp = useRef(false); // true after first successful getUserMedia
 
   const getInputVolume = useCallback(() => volumeRef.current, []);
 
@@ -146,9 +147,16 @@ export default function AppPage(): React.JSX.Element {
   const startRecording = useCallback(async () => {
     if (wantsMicRef.current) return; // Already recording
     wantsMicRef.current = true;
-    setState("initializing");
     setMessage("");
     setPartialText("");
+
+    // Show initializing only on the very first press (mic not yet warmed up)
+    if (!micWarmedUp.current) {
+      setState("initializing");
+    } else {
+      setState("recording");
+      playTone("start");
+    }
 
     // Capture frontmost app NOW (before mic dialog or any focus change)
     appContextRef.current =
@@ -163,9 +171,12 @@ export default function AppPage(): React.JSX.Element {
         return;
       }
 
-      // Mic acquired — transition to recording and play feedback sound
-      setState("recording");
-      playTone("start");
+      // Mark mic as warmed up after first successful acquisition
+      if (!micWarmedUp.current) {
+        micWarmedUp.current = true;
+        setState("recording");
+        playTone("start");
+      }
 
       // Start timer
       startTimeRef.current = Date.now();
@@ -366,7 +377,16 @@ export default function AppPage(): React.JSX.Element {
   // Hold-to-record: hotkey down = start, hotkey up = commit
   useEffect(() => {
     const removeDown = window.api.onHotkeyDown(() => {
-      if (stateRef.current === "idle") {
+      const s = stateRef.current;
+      // Allow starting from idle, or from terminal states that the pill
+      // may still be displaying (transcribing/pasted/error) when the
+      // user presses the hotkey again before the auto-dismiss fires.
+      if (
+        s === "idle" ||
+        s === "transcribing" ||
+        s === "pasted" ||
+        s === "error"
+      ) {
         startRecording();
       }
     });
