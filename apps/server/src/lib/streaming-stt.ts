@@ -26,9 +26,10 @@ const REALTIME_URL = "wss://api.openai.com/v1/realtime?intent=transcription";
 export function openStreamingSession(opts: {
   apiKey: string;
   model: string;
+  prompt?: string;
   callbacks: StreamCallbacks;
 }): StreamSession {
-  const { apiKey, model, callbacks } = opts;
+  const { apiKey, model, prompt, callbacks } = opts;
   let partialText = "";
   let configured = false;
 
@@ -40,12 +41,15 @@ export function openStreamingSession(opts: {
   });
 
   ws.on("open", () => {
+    const transcription: Record<string, unknown> = { model };
+    if (prompt) transcription.prompt = prompt;
+
     ws.send(
       JSON.stringify({
         type: "transcription_session.update",
         session: {
           input_audio_format: "pcm16",
-          input_audio_transcription: { model },
+          input_audio_transcription: transcription,
           turn_detection: null,
         },
       }),

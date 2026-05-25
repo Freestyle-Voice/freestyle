@@ -1,7 +1,8 @@
 import { useTexture } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import * as THREE from "three";
+import type { CircleGeometry, Mesh, ShaderMaterial } from "three";
+import { Color, RepeatWrapping, Uniform } from "three";
 
 export type AgentState = null | "thinking" | "listening" | "talking";
 
@@ -90,11 +91,10 @@ function Scene({
   getOutputVolume?: () => number;
 }) {
   const { gl } = useThree();
-  const circleRef =
-    useRef<THREE.Mesh<THREE.CircleGeometry, THREE.ShaderMaterial>>(null);
+  const circleRef = useRef<Mesh<CircleGeometry, ShaderMaterial>>(null);
   const initialColorsRef = useRef<[string, string]>(colors);
-  const targetColor1Ref = useRef(new THREE.Color(colors[0]));
-  const targetColor2Ref = useRef(new THREE.Color(colors[1]));
+  const targetColor1Ref = useRef(new Color(colors[0]));
+  const targetColor2Ref = useRef(new Color(colors[1]));
   const animSpeedRef = useRef(0.1);
   const perlinNoiseTexture = useTexture(
     "https://storage.googleapis.com/eleven-public-cdn/images/perlin-noise.png",
@@ -138,8 +138,8 @@ function Scene({
   );
 
   useEffect(() => {
-    targetColor1Ref.current = new THREE.Color(colors[0]);
-    targetColor2Ref.current = new THREE.Color(colors[1]);
+    targetColor1Ref.current = new Color(colors[0]);
+    targetColor2Ref.current = new Color(colors[1]);
   }, [colors]);
 
   useEffect(() => {
@@ -229,22 +229,22 @@ function Scene({
   }, [gl]);
 
   const uniforms = useMemo(() => {
-    perlinNoiseTexture.wrapS = THREE.RepeatWrapping;
-    perlinNoiseTexture.wrapT = THREE.RepeatWrapping;
+    perlinNoiseTexture.wrapS = RepeatWrapping;
+    perlinNoiseTexture.wrapT = RepeatWrapping;
     const isDark =
       typeof document !== "undefined" &&
       document.documentElement.classList.contains("dark");
     return {
-      uColor1: new THREE.Uniform(new THREE.Color(initialColorsRef.current[0])),
-      uColor2: new THREE.Uniform(new THREE.Color(initialColorsRef.current[1])),
+      uColor1: new Uniform(new Color(initialColorsRef.current[0])),
+      uColor2: new Uniform(new Color(initialColorsRef.current[1])),
       uOffsets: { value: offsets },
-      uPerlinTexture: new THREE.Uniform(perlinNoiseTexture),
-      uTime: new THREE.Uniform(0),
-      uAnimation: new THREE.Uniform(0.1),
-      uInverted: new THREE.Uniform(isDark ? 1 : 0),
-      uInputVolume: new THREE.Uniform(0),
-      uOutputVolume: new THREE.Uniform(0),
-      uOpacity: new THREE.Uniform(0),
+      uPerlinTexture: new Uniform(perlinNoiseTexture),
+      uTime: new Uniform(0),
+      uAnimation: new Uniform(0.1),
+      uInverted: new Uniform(isDark ? 1 : 0),
+      uInputVolume: new Uniform(0),
+      uOutputVolume: new Uniform(0),
+      uOpacity: new Uniform(0),
     };
   }, [perlinNoiseTexture, offsets]);
 

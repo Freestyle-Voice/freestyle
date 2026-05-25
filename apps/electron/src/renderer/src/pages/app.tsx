@@ -233,7 +233,11 @@ export default function AppPage(): React.JSX.Element {
     }
 
     try {
-      const stream = await recorderRef.current.start();
+      // When streaming is active, skip MediaRecorder entirely — the
+      // Streamer accumulates PCM16 and can produce a WAV if needed.
+      const stream = useStreaming
+        ? await recorderRef.current.acquireStream()
+        : await recorderRef.current.start();
 
       if (!wantsMicRef.current) {
         recorderRef.current.cancel();
@@ -246,7 +250,6 @@ export default function AppPage(): React.JSX.Element {
         setState("recording");
       }
 
-      // Start timer
       startTimeRef.current = Date.now();
       const updateTimer = () => {
         if (!wantsMicRef.current) return;
@@ -293,18 +296,25 @@ export default function AppPage(): React.JSX.Element {
       return;
     }
 
-    // REST fallback: stop recorder, send WAV
     setState("transcribing");
     streamerRef.current?.cancel();
 
     try {
-      let wavBlob: Blob;
-      if (recorderRef.current.isRecording()) {
+      // Prefer the Streamer's pre-encoded WAV (already 16kHz PCM16,
+      // no decode/resample overhead).  Fall back to MediaRecorder path
+      // only when the Streamer has no accumulated audio.
+      let wavBlob: Blob | null = streamerRef.current?.getWavBlob() ?? null;
+
+      if (!wavBlob && recorderRef.current.isRecording()) {
         wavBlob = await recorderRef.current.stop();
-      } else {
+      }
+
+      if (!wavBlob) {
         hidePill();
         return;
       }
+
+      recorderRef.current.cancel();
 
       const headers: Record<string, string> = {
         "Content-Type": "audio/wav",

@@ -6,8 +6,12 @@ export class Recorder {
   private chunks: Blob[] = [];
   private mimeType = "";
 
-  async start(deviceId?: string | null): Promise<MediaStream> {
-    this.chunks = [];
+  /**
+   * Acquire the microphone stream without starting a MediaRecorder.
+   * Use this when the Streamer handles audio capture and you only
+   * need the stream for visualization.
+   */
+  async acquireStream(deviceId?: string | null): Promise<MediaStream> {
     const processing = {
       echoCancellation: false,
       noiseSuppression: false,
@@ -32,16 +36,26 @@ export class Recorder {
         throw e;
       }
     }
+    return this.stream;
+  }
+
+  /**
+   * Acquire the mic AND start a MediaRecorder for the REST fallback
+   * path (when streaming is unavailable).
+   */
+  async start(deviceId?: string | null): Promise<MediaStream> {
+    this.chunks = [];
+    const stream = await this.acquireStream(deviceId);
     this.mimeType = pickSupportedMime();
     this.mediaRecorder = new MediaRecorder(
-      this.stream,
+      stream,
       this.mimeType ? { mimeType: this.mimeType } : undefined,
     );
     this.mediaRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) this.chunks.push(e.data);
     };
     this.mediaRecorder.start();
-    return this.stream;
+    return stream;
   }
 
   getStream(): MediaStream | null {

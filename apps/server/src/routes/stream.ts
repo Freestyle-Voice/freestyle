@@ -72,9 +72,21 @@ stream.get(
         return;
       }
 
+      let prompt: string | undefined;
+      try {
+        const db = getDb();
+        const row = db
+          .prepare(
+            "SELECT value FROM settings WHERE key = 'transcription_prompt'",
+          )
+          .get() as { value: string } | undefined;
+        if (row?.value) prompt = row.value;
+      } catch {}
+
       upstream = openStreamingSession({
         apiKey,
         model: modelShort,
+        prompt,
         callbacks: {
           onReady: (model) => {
             ws.send(JSON.stringify({ type: "session.ready", model }));

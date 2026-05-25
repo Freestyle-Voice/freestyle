@@ -99,6 +99,7 @@ export default function GeneralSettingsPage(): React.JSX.Element {
   const [language, setLanguage] = useState("auto");
   const [pillPosition, setPillPosition] = useState("bottom-center");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [transcriptionPrompt, setTranscriptionPrompt] = useState("");
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -172,6 +173,12 @@ export default function GeneralSettingsPage(): React.JSX.Element {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.value === "false") setSoundEnabled(false);
+      })
+      .catch(() => {});
+    fetch(`${getApiBase()}/api/settings/transcription_prompt`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.value) setTranscriptionPrompt(data.value);
       })
       .catch(() => {});
 
@@ -379,6 +386,31 @@ export default function GeneralSettingsPage(): React.JSX.Element {
               </select>
             </div>
           </div>
+        </div>
+
+        {/* Transcription prompt hint */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Transcription Prompt</label>
+          <p className="text-muted-foreground text-xs">
+            Hint for the speech model — list domain terms, names, or jargon to
+            improve accuracy.
+          </p>
+          <input
+            type="text"
+            value={transcriptionPrompt}
+            onChange={(e) => {
+              setTranscriptionPrompt(e.target.value);
+            }}
+            onBlur={() => {
+              fetch(`${getApiBase()}/api/settings/transcription_prompt`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ value: transcriptionPrompt }),
+              }).catch(() => {});
+            }}
+            placeholder="e.g. TypeScript, React, Kubernetes, JIRA..."
+            className="border-border bg-card text-foreground w-full rounded-lg border px-3 py-2 text-sm"
+          />
         </div>
 
         {/* Sound toggle - inline row */}
