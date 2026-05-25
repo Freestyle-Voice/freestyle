@@ -377,9 +377,7 @@ export default function AppPage(): React.JSX.Element {
   useEffect(() => {
     const removeDown = window.api.onHotkeyDown(() => {
       const s = stateRef.current;
-      // Allow starting from idle, or from terminal states that the pill
-      // may still be displaying (transcribing/pasted/error) when the
-      // user presses the hotkey again before the auto-dismiss fires.
+      // Allow starting from idle or terminal states (transcribing/error)
       if (s === "idle" || s === "transcribing" || s === "error") {
         startRecording();
       }
@@ -450,8 +448,6 @@ export default function AppPage(): React.JSX.Element {
           .glow-transcribing { animation: glow-pulse-blue 1.5s ease-in-out infinite; }
           .glow-error { animation: glow-pulse-red 1.5s ease-in-out infinite; }
           .glow-idle { box-shadow: 0 0 6px 2px rgba(161,161,170,0.05); transition: box-shadow 300ms ease; }
-
-
         `}
       </style>
       <div className={glowState} style={{ borderRadius: 28 }}>
