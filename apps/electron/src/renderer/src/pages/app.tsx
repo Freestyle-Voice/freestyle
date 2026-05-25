@@ -513,15 +513,32 @@ export default function AppPage(): React.JSX.Element {
           .glow-error { animation: glow-pulse-red 1.5s ease-in-out infinite; }
           .glow-idle { box-shadow: 0 0 6px 2px rgba(161,161,170,0.05); transition: box-shadow 300ms ease; }
 
-          @keyframes pill-exit-anim {
+          /* Exit animation: text fades + pill collapses, then shrinks away */
+          @keyframes pill-exit-shrink {
             0%   { transform: scale(1);   opacity: 1; }
-            100% { transform: scale(0.5); opacity: 0; }
+            30%  { transform: scale(1);   opacity: 1; }
+            100% { transform: scale(0);   opacity: 0; }
+          }
+          @keyframes pill-exit-collapse {
+            0%   { max-width: 420px; }
+            30%  { max-width: 52px; }
+            100% { max-width: 52px; }
+          }
+          @keyframes pill-exit-fade-text {
+            0%   { opacity: 1; }
+            20%  { opacity: 0; }
+            100% { opacity: 0; }
           }
           .pill-exit {
-            animation: pill-exit-anim ${EXIT_ANIM_MS}ms ease-in-out forwards !important;
+            animation: pill-exit-shrink ${EXIT_ANIM_MS}ms ease-in-out forwards !important;
           }
-          .pill-exit * {
-            animation-duration: 0s !important;
+          .pill-exit > div {
+            animation: pill-exit-collapse ${EXIT_ANIM_MS}ms ease-in-out forwards !important;
+            overflow: hidden;
+          }
+          .pill-exit > div > *:not(:first-child) {
+            animation: pill-exit-fade-text ${EXIT_ANIM_MS}ms ease-out forwards !important;
+            white-space: nowrap;
           }
         `}
       </style>
