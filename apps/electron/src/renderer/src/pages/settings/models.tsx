@@ -5,7 +5,7 @@ import {
   localLlmConfigSchema,
 } from "@freestyle/validations";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getApiBase } from "@renderer/lib/api";
+import { getClient } from "@renderer/lib/api";
 import { cn } from "@renderer/lib/utils";
 import {
   AlertTriangle,
@@ -150,6 +150,7 @@ export default function ModelsPage(): React.JSX.Element {
 
   const loadData = useCallback(async () => {
     try {
+      const client = getClient();
       const [
         availRes,
         configRes,
@@ -158,12 +159,14 @@ export default function ModelsPage(): React.JSX.Element {
         localUrlRes,
         localKeyRes,
       ] = await Promise.all([
-        fetch(`${getApiBase()}/api/models/available`),
-        fetch(`${getApiBase()}/api/models/configured`),
-        fetch(`${getApiBase()}/api/keys`),
-        fetch(`${getApiBase()}/api/settings/llm_cleanup`),
-        fetch(`${getApiBase()}/api/settings/local_llm_url`),
-        fetch(`${getApiBase()}/api/settings/local_llm_api_key`),
+        client.api.models.available.$get(),
+        client.api.models.configured.$get(),
+        client.api.keys.$get(),
+        client.api.settings[":key"].$get({ param: { key: "llm_cleanup" } }),
+        client.api.settings[":key"].$get({ param: { key: "local_llm_url" } }),
+        client.api.settings[":key"].$get({
+          param: { key: "local_llm_api_key" },
+        }),
       ]);
       if (availRes.ok) setAvailable(await availRes.json());
       if (configRes.ok) {
@@ -281,16 +284,14 @@ export default function ModelsPage(): React.JSX.Element {
         return;
       }
 
-      await fetch(`${getApiBase()}/api/models/configured`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await getClient().api.models.configured.$post({
+        json: {
           provider: model.provider_id,
           model_id: model.model_id,
           model_name: model.model_name,
           type,
           is_default: true,
-        }),
+        },
       });
       setVoiceDropdownOpen(false);
       setLlmDropdownOpen(false);
@@ -305,25 +306,22 @@ export default function ModelsPage(): React.JSX.Element {
     async (data: ApiKeyInput) => {
       if (!pendingModel) return;
 
-      await fetch(`${getApiBase()}/api/keys`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const client = getClient();
+      await client.api.keys.$post({
+        json: {
           provider: data.provider,
           key: data.key,
-        }),
+        },
       });
 
-      await fetch(`${getApiBase()}/api/models/configured`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await client.api.models.configured.$post({
+        json: {
           provider: pendingModel.provider_id,
           model_id: pendingModel.model_id,
           model_name: pendingModel.model_name,
           type: pendingModelType,
           is_default: true,
-        }),
+        },
       });
 
       closePendingKey();
@@ -338,13 +336,11 @@ export default function ModelsPage(): React.JSX.Element {
 
   const saveProviderKey = useCallback(async () => {
     if (!editKeyValue.trim() || !editingProvider) return;
-    await fetch(`${getApiBase()}/api/keys`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    await getClient().api.keys.$post({
+      json: {
         provider: editingProvider,
         key: editKeyValue.trim(),
-      }),
+      },
     });
     setEditingProvider(null);
     setEditKeyValue("");
@@ -386,16 +382,17 @@ export default function ModelsPage(): React.JSX.Element {
 
   const confirmDeleteProvider = useCallback(async () => {
     if (!deleteProvider) return;
-    await fetch(`${getApiBase()}/api/keys/${deleteProvider}`, {
-      method: "DELETE",
+    const client = getClient();
+    await client.api.keys[":provider"].$delete({
+      param: { provider: deleteProvider },
     });
     const providerModels = configured.filter(
       (m) => m.provider === deleteProvider,
     );
     await Promise.all(
       providerModels.map((m) =>
-        fetch(`${getApiBase()}/api/models/configured/${m.id}`, {
-          method: "DELETE",
+        client.api.models.configured[":id"].$delete({
+          param: { id: String(m.id) },
         }),
       ),
     );
@@ -598,13 +595,14 @@ export default function ModelsPage(): React.JSX.Element {
           onClick={() => {
             const next = !llmCleanup;
             setLlmCleanup(next);
-            fetch(`${getApiBase()}/api/settings/llm_cleanup`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ value: String(next) }),
-            }).catch((err) =>
-              console.error("Failed to save LLM cleanup:", err),
-            );
+            getClient()
+              .api.settings[":key"].$put({
+                param: { key: "llm_cleanup" },
+                json: { value: String(next) },
+              })
+              .catch((err) =>
+                console.error("Failed to save LLM cleanup:", err),
+              );
           }}
           className={cn(
             "flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-sm transition-colors",
@@ -677,50 +675,49 @@ export default function ModelsPage(): React.JSX.Element {
 
                   try {
                     const url = data.url.replace(/\/+$/, "");
+                    const client = getClient();
 
                     await Promise.all([
-                      fetch(`${getApiBase()}/api/settings/local_llm_url`, {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ value: url }),
+                      client.api.settings[":key"].$put({
+                        param: { key: "local_llm_url" },
+                        json: { value: url },
                       }),
                       data.api_key?.trim()
-                        ? fetch(
-                            `${getApiBase()}/api/settings/local_llm_api_key`,
-                            {
-                              method: "PUT",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({
-                                value: data.api_key.trim(),
-                              }),
-                            },
-                          )
-                        : fetch(
-                            `${getApiBase()}/api/settings/local_llm_api_key`,
-                            { method: "DELETE" },
-                          ),
+                        ? client.api.settings[":key"].$put({
+                            param: { key: "local_llm_api_key" },
+                            json: { value: data.api_key.trim() },
+                          })
+                        : client.api.settings[":key"].$delete({
+                            param: { key: "local_llm_api_key" },
+                          }),
                     ]);
 
-                    const res = await fetch(
-                      `${getApiBase()}/api/settings/local-llm/test`,
-                      {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          url,
-                          api_key: data.api_key?.trim() || undefined,
-                        }),
+                    const res = await client.api.settings[
+                      "local-llm"
+                    ].test.$post({
+                      json: {
+                        url,
+                        api_key: data.api_key?.trim() || undefined,
                       },
-                    );
-                    const result = await res.json();
+                    });
 
-                    if (result.ok) {
-                      setLocalLlmConnected(true);
-                      setLocalLlmModels(result.models ?? []);
-                      loadData();
+                    if (res.ok) {
+                      const result = await res.json();
+                      if ("ok" in result && result.ok) {
+                        setLocalLlmConnected(true);
+                        setLocalLlmModels(result.models ?? []);
+                        loadData();
+                      } else {
+                        setLocalLlmConnected(false);
+                        const errorMsg =
+                          "error" in result && typeof result.error === "string"
+                            ? result.error
+                            : "Connection failed";
+                        setLocalLlmError(errorMsg);
+                      }
                     } else {
                       setLocalLlmConnected(false);
-                      setLocalLlmError(result.error ?? "Connection failed");
+                      setLocalLlmError(`HTTP ${res.status}`);
                     }
                   } catch (err) {
                     setLocalLlmConnected(false);
@@ -855,22 +852,15 @@ export default function ModelsPage(): React.JSX.Element {
                               key={modelName}
                               type="button"
                               onClick={async () => {
-                                await fetch(
-                                  `${getApiBase()}/api/models/configured`,
-                                  {
-                                    method: "POST",
-                                    headers: {
-                                      "Content-Type": "application/json",
-                                    },
-                                    body: JSON.stringify({
-                                      provider: "local-llm",
-                                      model_id: modelId,
-                                      model_name: modelName,
-                                      type: "llm",
-                                      is_default: true,
-                                    }),
+                                await getClient().api.models.configured.$post({
+                                  json: {
+                                    provider: "local-llm",
+                                    model_id: modelId,
+                                    model_name: modelName,
+                                    type: "llm",
+                                    is_default: true,
                                   },
-                                );
+                                });
                                 setLocalLlmModelDropdownOpen(false);
                                 loadData();
                               }}

@@ -1,5 +1,5 @@
 import { Orb } from "@renderer/components/ui/orb";
-import { getApiBase } from "@renderer/lib/api";
+import { getApiBase, getClient } from "@renderer/lib/api";
 import { Recorder } from "@renderer/lib/recorder";
 import { Streamer } from "@renderer/lib/streamer";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -357,15 +357,12 @@ export default function AppPage(): React.JSX.Element {
 
   // Load sound preference from server settings
   useEffect(() => {
-    window.api
-      ?.getServerPort()
-      .then((port) =>
-        fetch(`http://localhost:${port}/api/settings/sound_enabled`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((data) => {
-            if (data?.value === "false") _soundEnabled = false;
-          }),
-      )
+    getClient()
+      .api.settings[":key"].$get({ param: { key: "sound_enabled" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.value === "false") _soundEnabled = false;
+      })
       .catch(() => {});
   }, []);
 

@@ -1,4 +1,4 @@
-import { getApiBase } from "@renderer/lib/api";
+import { getClient } from "@renderer/lib/api";
 import { cn } from "@renderer/lib/utils";
 import {
   Check,
@@ -101,16 +101,17 @@ export default function HistoryPage(): React.JSX.Element {
 
   const loadData = useCallback(async () => {
     try {
-      const params = new URLSearchParams({
+      const query: Record<string, string> = {
         limit: String(PAGE_SIZE),
         offset: String(page * PAGE_SIZE),
         orderBy: "-created_at",
-      });
-      if (search) params.set("search", search);
+      };
+      if (search) query.search = search;
 
+      const client = getClient();
       const [histRes, statsRes] = await Promise.all([
-        fetch(`${getApiBase()}/api/history?${params}`),
-        fetch(`${getApiBase()}/api/history/stats`),
+        client.api.history.$get({ query }),
+        client.api.history.stats.$get(),
       ]);
       if (histRes.ok) {
         const data = await histRes.json();
@@ -133,7 +134,9 @@ export default function HistoryPage(): React.JSX.Element {
 
   const deleteEntry = useCallback(
     async (id: number) => {
-      await fetch(`${getApiBase()}/api/history/${id}`, { method: "DELETE" });
+      await getClient().api.history[":id"].$delete({
+        param: { id: String(id) },
+      });
       loadData();
     },
     [loadData],
@@ -141,7 +144,7 @@ export default function HistoryPage(): React.JSX.Element {
 
   const clearAll = useCallback(async () => {
     if (!confirm("Clear all transcription history?")) return;
-    await fetch(`${getApiBase()}/api/history`, { method: "DELETE" });
+    await getClient().api.history.$delete();
     loadData();
   }, [loadData]);
 

@@ -4,7 +4,7 @@ import {
   type feedbackTypes,
 } from "@freestyle/validations";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getApiBase } from "@renderer/lib/api";
+import { getClient } from "@renderer/lib/api";
 import { cn } from "@renderer/lib/utils";
 import { Check, MessageSquare, Send } from "lucide-react";
 import { useState } from "react";
@@ -37,15 +37,11 @@ export default function FeedbackPage(): React.JSX.Element {
   const onSubmit = async (data: FeedbackInput) => {
     setSending(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
+      const res = await getClient().api.feedback.$post({ json: data });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Failed to send" }));
-        throw new Error(err.error || `HTTP ${res.status}`);
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
       }
 
       setSent(true);

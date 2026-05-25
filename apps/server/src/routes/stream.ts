@@ -184,7 +184,7 @@ const stream = new Hono().get(
           msg = JSON.parse(
             typeof event.data === "string"
               ? event.data
-              : new TextDecoder().decode(event.data as ArrayBuffer),
+              : new TextDecoder().decode(event.data as unknown as ArrayBuffer),
           );
         } catch {
           return;

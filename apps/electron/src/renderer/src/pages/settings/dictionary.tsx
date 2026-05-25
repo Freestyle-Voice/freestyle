@@ -3,7 +3,7 @@ import {
   createDictionarySchema,
 } from "@freestyle/validations";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getApiBase } from "@renderer/lib/api";
+import { getClient } from "@renderer/lib/api";
 import { cn } from "@renderer/lib/utils";
 import {
   Book,
@@ -55,14 +55,14 @@ export default function DictionaryPage(): React.JSX.Element {
 
   const loadData = useCallback(async () => {
     try {
-      const params = new URLSearchParams({
+      const query: Record<string, string> = {
         limit: String(PAGE_SIZE),
         offset: String(page * PAGE_SIZE),
         orderBy: "-created_at",
-      });
-      if (search) params.set("search", search);
+      };
+      if (search) query.search = search;
 
-      const res = await fetch(`${getApiBase()}/api/dictionary?${params}`);
+      const res = await getClient().api.dictionary.$get({ query });
       if (res.ok) {
         const data = await res.json();
         setEntries(data.items);
@@ -103,19 +103,17 @@ export default function DictionaryPage(): React.JSX.Element {
       setFormError(null);
 
       try {
-        const url = editingId
-          ? `${getApiBase()}/api/dictionary/${editingId}`
-          : `${getApiBase()}/api/dictionary`;
-
-        const res = await fetch(url, {
-          method: editingId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
+        const client = getClient();
+        const res = editingId
+          ? await client.api.dictionary[":id"].$put({
+              param: { id: String(editingId) },
+              json: data,
+            })
+          : await client.api.dictionary.$post({ json: data });
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: "Failed" }));
-          setFormError(err.error || `HTTP ${res.status}`);
+          const err = await res.text().catch(() => "");
+          setFormError(err || `HTTP ${res.status}`);
           return;
         }
 
@@ -130,8 +128,8 @@ export default function DictionaryPage(): React.JSX.Element {
 
   const deleteEntry = useCallback(
     async (id: number) => {
-      await fetch(`${getApiBase()}/api/dictionary/${id}`, {
-        method: "DELETE",
+      await getClient().api.dictionary[":id"].$delete({
+        param: { id: String(id) },
       });
       loadData();
     },
@@ -142,7 +140,7 @@ export default function DictionaryPage(): React.JSX.Element {
 
   const exportJson = useCallback(async () => {
     try {
-      const res = await fetch(`${getApiBase()}/api/dictionary/export/json`);
+      const res = await getClient().api.dictionary.export.json.$get();
       if (!res.ok) return;
       const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -166,11 +164,7 @@ export default function DictionaryPage(): React.JSX.Element {
       try {
         const text = await file.text();
         const data = JSON.parse(text);
-        await fetch(`${getApiBase()}/api/dictionary/import`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
+        await getClient().api.dictionary.import.$post({ json: data });
         loadData();
       } catch {
         // ignore

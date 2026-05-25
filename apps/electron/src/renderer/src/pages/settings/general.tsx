@@ -4,7 +4,7 @@ import {
   keyDisplayLabel,
   useHotkeyRecorder,
 } from "@renderer/hooks/use-hotkey-recorder";
-import { getApiBase } from "@renderer/lib/api";
+import { getClient } from "@renderer/lib/api";
 import { cn } from "@renderer/lib/utils";
 import {
   Download,
@@ -106,11 +106,12 @@ export default function GeneralSettingsPage(): React.JSX.Element {
 
   const handleHotkeyRecorded = useCallback((accelerator: string) => {
     setHotkey(accelerator);
-    fetch(`${getApiBase()}/api/settings/hotkey`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value: accelerator }),
-    }).catch(() => {});
+    getClient()
+      .api.settings[":key"].$put({
+        param: { key: "hotkey" },
+        json: { value: accelerator },
+      })
+      .catch(() => {});
     window.api.updateHotkey(accelerator);
   }, []);
 
@@ -147,19 +148,22 @@ export default function GeneralSettingsPage(): React.JSX.Element {
 
   // Load saved settings from server
   useEffect(() => {
-    fetch(`${getApiBase()}/api/settings/mic_device_id`)
+    getClient()
+      .api.settings[":key"].$get({ param: { key: "mic_device_id" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.value) setSelectedDevice(data.value);
       })
       .catch(() => {});
-    fetch(`${getApiBase()}/api/settings/hotkey`)
+    getClient()
+      .api.settings[":key"].$get({ param: { key: "hotkey" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.value) setHotkey(data.value);
       })
       .catch(() => {});
-    fetch(`${getApiBase()}/api/settings/language`)
+    getClient()
+      .api.settings[":key"].$get({ param: { key: "language" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.value) setLanguage(data.value);
@@ -169,13 +173,15 @@ export default function GeneralSettingsPage(): React.JSX.Element {
       ?.getPillPosition()
       .then(setPillPosition)
       .catch(() => {});
-    fetch(`${getApiBase()}/api/settings/sound_enabled`)
+    getClient()
+      .api.settings[":key"].$get({ param: { key: "sound_enabled" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.value === "false") setSoundEnabled(false);
       })
       .catch(() => {});
-    fetch(`${getApiBase()}/api/settings/transcription_prompt`)
+    getClient()
+      .api.settings[":key"].$get({ param: { key: "transcription_prompt" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.value) setTranscriptionPrompt(data.value);
@@ -205,32 +211,32 @@ export default function GeneralSettingsPage(): React.JSX.Element {
 
   const handleDeviceChange = useCallback((deviceId: string) => {
     setSelectedDevice(deviceId);
-    fetch(`${getApiBase()}/api/settings/mic_device_id`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value: deviceId }),
-    }).catch(() => {});
+    getClient()
+      .api.settings[":key"].$put({
+        param: { key: "mic_device_id" },
+        json: { value: deviceId },
+      })
+      .catch(() => {});
   }, []);
 
   const handleThemeChange = useCallback(
     (value: string) => {
       setTheme(value);
-      fetch(`${getApiBase()}/api/settings/theme`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value }),
-      }).catch(() => {});
+      getClient()
+        .api.settings[":key"].$put({ param: { key: "theme" }, json: { value } })
+        .catch(() => {});
     },
     [setTheme],
   );
 
   const handleLanguageChange = useCallback((value: string) => {
     setLanguage(value);
-    fetch(`${getApiBase()}/api/settings/language`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value }),
-    }).catch(() => {});
+    getClient()
+      .api.settings[":key"].$put({
+        param: { key: "language" },
+        json: { value },
+      })
+      .catch(() => {});
   }, []);
 
   const handlePillPositionChange = useCallback((value: string) => {
@@ -240,11 +246,12 @@ export default function GeneralSettingsPage(): React.JSX.Element {
 
   const handleSoundToggle = useCallback((enabled: boolean) => {
     setSoundEnabled(enabled);
-    fetch(`${getApiBase()}/api/settings/sound_enabled`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value: String(enabled) }),
-    }).catch(() => {});
+    getClient()
+      .api.settings[":key"].$put({
+        param: { key: "sound_enabled" },
+        json: { value: String(enabled) },
+      })
+      .catch(() => {});
   }, []);
 
   // Build display keys for current recorder state
@@ -437,11 +444,12 @@ export default function GeneralSettingsPage(): React.JSX.Element {
               setTranscriptionPrompt(e.target.value);
             }}
             onBlur={() => {
-              fetch(`${getApiBase()}/api/settings/transcription_prompt`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ value: transcriptionPrompt }),
-              }).catch(() => {});
+              getClient()
+                .api.settings[":key"].$put({
+                  param: { key: "transcription_prompt" },
+                  json: { value: transcriptionPrompt },
+                })
+                .catch(() => {});
             }}
             placeholder="e.g. TypeScript, React, Kubernetes, JIRA..."
             className="border-border bg-card text-foreground w-full rounded-lg border px-3 py-2 text-sm"

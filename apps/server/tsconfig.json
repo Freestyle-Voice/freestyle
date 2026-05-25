@@ -7,6 +7,10 @@
     "moduleResolution": "bundler",
     "target": "esnext",
     "types": ["node"],
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationDir": "./dist",
+    "emitDeclarationOnly": true,
     "paths": {
       "@freestyle/validations": ["../../packages/validations/src/index.ts"]
     }

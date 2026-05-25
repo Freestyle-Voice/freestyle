@@ -2,10 +2,11 @@
   "name": "@freestyle/server",
   "type": "module",
   "scripts": {
-    "build": "pkgroll --minify src/index.ts"
+    "build": "tsc --emitDeclarationOnly && pkgroll --minify src/index.ts"
   },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "development": "./src/index.ts"
     }
@@ -19,6 +20,7 @@
     "@ai-sdk/groq": "^3.0.39",
     "@ai-sdk/openai": "^3.0.65",
     "@freestyle/validations": "workspace:*",
+    "@hono/node-server": "^2.0.4",
     "@hono/zod-validator": "^0.8.0",
     "@sentry/node": "^10.53.1",
     "ai": "^6.0.191",
@@ -27,8 +29,10 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/json-schema": "^7.0.15",
     "@types/node": "latest",
     "@types/ws": "^8.18.1",
-    "pkgroll": "^2.27.0"
+    "pkgroll": "^2.27.0",
+    "typescript": "^5.9.3"
   }
 }

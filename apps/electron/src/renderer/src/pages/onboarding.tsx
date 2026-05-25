@@ -2,7 +2,7 @@ import { apiKeySchema } from "@freestyle/validations";
 import { zodResolver } from "@hookform/resolvers/zod";
 import markDark from "@renderer/assets/mark-dark.svg";
 import markLight from "@renderer/assets/mark-light.svg";
-import { getApiBase } from "@renderer/lib/api";
+import { getClient } from "@renderer/lib/api";
 import { cn } from "@renderer/lib/utils";
 import {
   AlertTriangle,
@@ -73,11 +73,14 @@ export default function OnboardingPage(): React.JSX.Element {
 
   // Load models
   useEffect(() => {
-    fetch(`${getApiBase()}/api/models/available`)
+    const client = getClient();
+    client.api.models.available
+      .$get()
       .then((r) => (r.ok ? r.json() : []))
       .then((models: AvailableModel[]) => setAvailable(models))
       .catch(() => {});
-    fetch(`${getApiBase()}/api/keys`)
+    client.api.keys
+      .$get()
       .then((r) => (r.ok ? r.json() : []))
       .then((keys: { provider: string }[]) =>
         setApiKeys(new Set(keys.map((k) => k.provider))),
@@ -121,31 +124,28 @@ export default function OnboardingPage(): React.JSX.Element {
     setSaving(true);
 
     try {
+      const client = getClient();
       if (needsKey) {
         const keyData = apiKeyForm.getValues();
         if (keyData.key.trim()) {
-          await fetch(`${getApiBase()}/api/keys`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          await client.api.keys.$post({
+            json: {
               provider: keyData.provider,
               key: keyData.key.trim(),
-            }),
+            },
           });
         }
       }
 
       // Save voice model as default
-      await fetch(`${getApiBase()}/api/models/configured`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await client.api.models.configured.$post({
+        json: {
           provider: selectedModel.provider_id,
           model_id: selectedModel.model_id,
           model_name: selectedModel.model_name,
           type: "voice",
           is_default: true,
-        }),
+        },
       });
 
       // Mark onboarding complete

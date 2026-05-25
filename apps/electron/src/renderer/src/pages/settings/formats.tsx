@@ -1,7 +1,7 @@
 import type { CreateFormatInput } from "@freestyle/validations";
 import { createFormatSchema } from "@freestyle/validations";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getApiBase } from "@renderer/lib/api";
+import { getClient } from "@renderer/lib/api";
 import { cn } from "@renderer/lib/utils";
 import { FileText, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -32,7 +32,9 @@ export default function FormatsPage(): React.JSX.Element {
 
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch(`${getApiBase()}/api/formats?limit=200`);
+      const res = await getClient().api.formats.$get({
+        query: { limit: "200" },
+      });
       if (res.ok) {
         const data = await res.json();
         setRules(data.items ?? data);
@@ -74,19 +76,17 @@ export default function FormatsPage(): React.JSX.Element {
       setFormError(null);
 
       try {
-        const url = editingId
-          ? `${getApiBase()}/api/formats/${editingId}`
-          : `${getApiBase()}/api/formats`;
-
-        const res = await fetch(url, {
-          method: editingId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
+        const client = getClient();
+        const res = editingId
+          ? await client.api.formats[":id"].$put({
+              param: { id: String(editingId) },
+              json: data,
+            })
+          : await client.api.formats.$post({ json: data });
 
         if (!res.ok) {
-          const result = await res.json().catch(() => ({ error: "Failed" }));
-          setFormError(result.error || `HTTP ${res.status}`);
+          const text = await res.text().catch(() => "");
+          setFormError(text || `HTTP ${res.status}`);
           return;
         }
 
@@ -101,14 +101,16 @@ export default function FormatsPage(): React.JSX.Element {
 
   const deleteRule = useCallback(
     async (id: number) => {
-      await fetch(`${getApiBase()}/api/formats/${id}`, { method: "DELETE" });
+      await getClient().api.formats[":id"].$delete({
+        param: { id: String(id) },
+      });
       loadData();
     },
     [loadData],
   );
 
   const resetDefaults = useCallback(async () => {
-    await fetch(`${getApiBase()}/api/formats/reset`, { method: "POST" });
+    await getClient().api.formats.reset.$post();
     loadData();
   }, [loadData]);
 

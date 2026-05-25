@@ -4,7 +4,7 @@ import { createElevenLabs } from "@ai-sdk/elevenlabs";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
 import { createOpenAI } from "@ai-sdk/openai";
-import type { LanguageModelV1 } from "ai";
+import type { LanguageModel } from "ai";
 import { getDb } from "./db.js";
 
 // Providers that don't require an API key from the api_keys table
@@ -15,7 +15,7 @@ const PROVIDER_FACTORIES: Record<
   string,
   (apiKey: string) => {
     transcription?: (model: string) => unknown;
-    chat?: (model: string) => LanguageModelV1;
+    chat?: (model: string) => LanguageModel;
   }
 > = {
   openai: (apiKey) => {
@@ -24,7 +24,10 @@ const PROVIDER_FACTORIES: Record<
   },
   groq: (apiKey) => {
     const p = createGroq({ apiKey });
-    return { transcription: (m) => p.transcription(m), chat: (m) => p.chat(m) };
+    return {
+      transcription: (m) => p.transcription(m),
+      chat: (m) => p.languageModel(m),
+    };
   },
   anthropic: (apiKey) => {
     const p = createAnthropic({ apiKey });
@@ -133,7 +136,7 @@ export function createTranscriptionModel(providerId: string, modelId: string) {
 export function createChatModel(
   providerId: string,
   modelId: string,
-): LanguageModelV1 {
+): LanguageModel {
   const isLocal = LOCAL_PROVIDERS.has(providerId);
   const apiKey = isLocal ? "local" : getApiKey(providerId);
   if (!apiKey)
