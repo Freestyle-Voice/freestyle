@@ -29,7 +29,8 @@ type PillState =
   | "transcribing"
   | "error";
 
-const EXIT_ANIM_MS = 400;
+const EXIT_FADE_MS = 150; // phase 1: text fades out
+const EXIT_SHRINK_MS = 250; // phase 2: pill + orb shrink + fade
 
 // ---------------------------------------------------------------------------
 // Sound system — generates short sine-wave tones via Web Audio API.
@@ -184,44 +185,75 @@ export default function AppPage(): React.JSX.Element {
     setPartialText("");
   }, []);
 
-  // Exit animation: shrink + fade the pill (keeping current content visible
-  // during the animation), then go to idle. Does NOT change React state
-  // until the animation finishes, so no layout jumps.
+  // Exit animation (two phases, no React state change during animation):
+  //   Phase 1: text content fades out (orb + pill border stay)
+  //   Phase 2: whole pill (glow + border + orb) shrinks and fades
+  // pillRef is on the glow wrapper (outermost animated element).
   const finishAndHide = useCallback(() => {
     if (exitTimerRef.current) {
       clearTimeout(exitTimerRef.current);
       exitTimerRef.current = null;
     }
     cancelAnimationFrame(exitRafRef.current);
-    const el = pillRef.current;
-    if (!el) {
+    const wrapper = pillRef.current;
+    if (!wrapper) {
       goIdle();
       return;
     }
-    // Set starting state without transition
-    el.style.transition = "none";
-    el.style.transform = "scale(1)";
-    el.style.opacity = "1";
-    // Double-rAF: guarantees the 'from' frame is painted before 'to'
-    exitRafRef.current = requestAnimationFrame(() => {
-      exitRafRef.current = requestAnimationFrame(() => {
-        if (!pillRef.current) return;
-        pillRef.current.style.transition = `transform ${EXIT_ANIM_MS}ms ease-in-out, opacity ${EXIT_ANIM_MS}ms ease-in-out`;
-        pillRef.current.style.transform = "scale(0.6)";
-        pillRef.current.style.opacity = "0";
-      });
-    });
+    // The inner pill is the first child of the glow wrapper
+    const pill = wrapper.firstElementChild as HTMLElement | null;
+    if (!pill) {
+      goIdle();
+      return;
+    }
+
+    // -- Phase 1: fade out text (children index 1+ of pill), keep orb --
+    const children = pill.children;
+    for (let i = 1; i < children.length; i++) {
+      const child = children[i] as HTMLElement;
+      child.style.transition = `opacity ${EXIT_FADE_MS}ms ease-out`;
+      child.style.opacity = "0";
+    }
+
+    // -- Phase 2: after text fades, shrink the whole wrapper --
     exitTimerRef.current = setTimeout(() => {
-      exitTimerRef.current = null;
-      if (pillRef.current) {
-        pillRef.current.style.transition = "";
-        pillRef.current.style.transform = "";
-        pillRef.current.style.opacity = "";
-      }
-      setState("idle");
-      setMessage("");
-      setPartialText("");
-    }, EXIT_ANIM_MS + 50);
+      // Set 'from' state on wrapper
+      wrapper.style.transition = "none";
+      wrapper.style.transform = "scale(1)";
+      wrapper.style.opacity = "1";
+      // Double-rAF for frame boundary
+      exitRafRef.current = requestAnimationFrame(() => {
+        exitRafRef.current = requestAnimationFrame(() => {
+          if (!pillRef.current) return;
+          pillRef.current.style.transition = `transform ${EXIT_SHRINK_MS}ms ease-in-out, opacity ${EXIT_SHRINK_MS}ms ease-in-out`;
+          pillRef.current.style.transform = "scale(0.5)";
+          pillRef.current.style.opacity = "0";
+        });
+      });
+
+      // Cleanup after shrink completes
+      exitTimerRef.current = setTimeout(() => {
+        exitTimerRef.current = null;
+        // Reset all inline styles
+        if (pillRef.current) {
+          pillRef.current.style.transition = "";
+          pillRef.current.style.transform = "";
+          pillRef.current.style.opacity = "";
+          const innerPill = pillRef.current
+            .firstElementChild as HTMLElement | null;
+          if (innerPill) {
+            const kids = innerPill.children;
+            for (let i = 1; i < kids.length; i++) {
+              (kids[i] as HTMLElement).style.transition = "";
+              (kids[i] as HTMLElement).style.opacity = "";
+            }
+          }
+        }
+        setState("idle");
+        setMessage("");
+        setPartialText("");
+      }, EXIT_SHRINK_MS + 50);
+    }, EXIT_FADE_MS);
   }, [goIdle]);
 
   // -- Start recording --
@@ -233,10 +265,19 @@ export default function AppPage(): React.JSX.Element {
       exitTimerRef.current = null;
     }
     cancelAnimationFrame(exitRafRef.current);
+    // Reset any exit animation inline styles on wrapper and children
     if (pillRef.current) {
       pillRef.current.style.transition = "";
       pillRef.current.style.transform = "";
       pillRef.current.style.opacity = "";
+      const pill = pillRef.current.firstElementChild as HTMLElement | null;
+      if (pill) {
+        const kids = pill.children;
+        for (let i = 1; i < kids.length; i++) {
+          (kids[i] as HTMLElement).style.transition = "";
+          (kids[i] as HTMLElement).style.opacity = "";
+        }
+      }
     }
     wantsMicRef.current = true;
     setMessage("");
@@ -527,9 +568,8 @@ export default function AppPage(): React.JSX.Element {
           .glow-idle { box-shadow: 0 0 6px 2px rgba(161,161,170,0.05); transition: box-shadow 300ms ease; }
         `}
       </style>
-      <div className={glowState} style={{ borderRadius: 28 }}>
+      <div ref={pillRef} className={glowState} style={{ borderRadius: 28 }}>
         <div
-          ref={pillRef}
           className="inline-flex items-center gap-3"
           style={
             {
