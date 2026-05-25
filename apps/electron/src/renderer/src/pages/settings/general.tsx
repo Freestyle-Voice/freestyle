@@ -260,6 +260,41 @@ export default function GeneralSettingsPage(): React.JSX.Element {
         </p>
       </div>
 
+      {/* ── Updates ────────────────────────────────────────────── */}
+      {updateAvailable && (
+        <div className="border-primary/30 bg-primary/5 flex items-center justify-between rounded-lg border px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Download className="text-primary h-4 w-4" />
+            <span className="text-sm">
+              {updateDownloaded
+                ? `Version ${updateAvailable} ready to install`
+                : `Version ${updateAvailable} available`}
+            </span>
+          </div>
+          {updateDownloaded ? (
+            <button
+              type="button"
+              onClick={() => window.api?.installUpdate()}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 rounded px-3 py-1 text-xs font-medium"
+            >
+              Restart & Update
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setDownloading(true);
+                window.api?.downloadUpdate();
+              }}
+              disabled={downloading}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 rounded px-3 py-1 text-xs font-medium disabled:opacity-50"
+            >
+              {downloading ? "Downloading..." : "Download"}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Recording ─────────────────────────────────────────── */}
       <div className="space-y-5">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -500,46 +535,6 @@ export default function GeneralSettingsPage(): React.JSX.Element {
           </div>
         </div>
       </div>
-
-      {/* ── Updates ────────────────────────────────────────────── */}
-      {updateAvailable && (
-        <div className="space-y-5">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Updates
-          </h2>
-          <div className="border-primary/30 bg-primary/5 flex items-center justify-between rounded-lg border px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Download className="text-primary h-4 w-4" />
-              <span className="text-sm">
-                {updateDownloaded
-                  ? `Version ${updateAvailable} ready to install`
-                  : `Version ${updateAvailable} available`}
-              </span>
-            </div>
-            {updateDownloaded ? (
-              <button
-                type="button"
-                onClick={() => window.api?.installUpdate()}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 rounded px-3 py-1 text-xs font-medium"
-              >
-                Restart & Update
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setDownloading(true);
-                  window.api?.downloadUpdate();
-                }}
-                disabled={downloading}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 rounded px-3 py-1 text-xs font-medium disabled:opacity-50"
-              >
-                {downloading ? "Downloading..." : "Download"}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
