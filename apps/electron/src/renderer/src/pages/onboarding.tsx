@@ -144,7 +144,7 @@ export default function OnboardingPage(): React.JSX.Element {
       window.api?.setOnboardingComplete();
 
       // Navigate to settings
-      navigate("/settings/general", { replace: true });
+      navigate("/today", { replace: true });
     } catch {
       setSaving(false);
     }
@@ -386,7 +386,7 @@ export default function OnboardingPage(): React.JSX.Element {
                 type="button"
                 onClick={() => {
                   window.api?.setOnboardingComplete();
-                  navigate("/settings/general", { replace: true });
+                  navigate("/today", { replace: true });
                 }}
                 className="text-muted-foreground hover:text-foreground w-full py-2 text-center text-xs"
               >

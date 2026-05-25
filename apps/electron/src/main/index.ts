@@ -277,7 +277,7 @@ function createSettingsWindow(): void {
   }
 
   settingsWindow.loadURL(
-    getRendererURL(onboardingDone ? "/settings" : "/onboarding"),
+    getRendererURL(onboardingDone ? "/today" : "/onboarding"),
   );
 }
 
@@ -549,6 +549,19 @@ app.whenReady().then(() => {
   // IPC: hide the pill window on request from renderer
   ipcMain.on("pill:hide", () => {
     hidePill();
+  });
+
+  // IPC: fan out per-frame audio levels from the pill to other windows
+  // (e.g. the Today tutorial demo) so they can render a live waveform.
+  ipcMain.on("audio:level", (_event, level: number) => {
+    if (typeof level !== "number") return;
+    settingsWindow?.webContents.send("audio:level", level);
+  });
+
+  // IPC: pill notifies that a transcription has finished + been pasted, so
+  // history-driven views (Today, History) can refetch without polling.
+  ipcMain.on("transcription:done", () => {
+    settingsWindow?.webContents.send("transcription:done");
   });
 
   // IPC: expose the server port to the renderer
@@ -1072,11 +1085,13 @@ function registerHotkey(hotkey?: string): void {
       hotkeyPressed = true;
       showPill();
       mainWindow?.webContents.send("hotkey:down");
+      settingsWindow?.webContents.send("hotkey:down");
       // Suppress the key event so other apps don't receive it
       return true;
     } else if (e.state === "UP" && hotkeyPressed) {
       hotkeyPressed = false;
       mainWindow?.webContents.send("hotkey:up");
+      settingsWindow?.webContents.send("hotkey:up");
       return true;
     }
 

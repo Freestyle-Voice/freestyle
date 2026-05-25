@@ -129,6 +129,14 @@ export default function HistoryPage(): React.JSX.Element {
     loadData();
   }, [loadData]);
 
+  // Refetch when the pill reports a completed transcription.
+  useEffect(() => {
+    const remove = window.api?.onTranscriptionDone(() => {
+      loadData();
+    });
+    return () => remove?.();
+  }, [loadData]);
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const deleteEntry = useCallback(

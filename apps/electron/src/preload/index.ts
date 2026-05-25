@@ -94,6 +94,23 @@ const api = {
     ipcRenderer.on("hotkey:error", handler);
     return () => ipcRenderer.removeListener("hotkey:error", handler);
   },
+  // Audio level stream — pill broadcasts per-frame mic amplitude (0..1) so
+  // other windows (the Today tutorial demo) can render a live waveform.
+  sendAudioLevel: (level: number): void =>
+    ipcRenderer.send("audio:level", level),
+  onAudioLevel: (callback: (level: number) => void): (() => void) => {
+    const handler = (_: unknown, level: number): void => callback(level);
+    ipcRenderer.on("audio:level", handler);
+    return () => ipcRenderer.removeListener("audio:level", handler);
+  },
+  // Fired by the pill after a successful transcription + paste, so other
+  // windows (Today, History) can refetch without polling.
+  sendTranscriptionDone: (): void => ipcRenderer.send("transcription:done"),
+  onTranscriptionDone: (callback: () => void): (() => void) => {
+    const handler = (): void => callback();
+    ipcRenderer.on("transcription:done", handler);
+    return () => ipcRenderer.removeListener("transcription:done", handler);
+  },
 };
 
 // Use `contextBridge` APIs to expose Electron APIs to

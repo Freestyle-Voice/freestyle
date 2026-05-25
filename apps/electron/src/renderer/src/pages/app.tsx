@@ -130,7 +130,10 @@ export default function AppPage(): React.JSX.Element {
         totalSum += val;
       }
       barsRef.current = smoothBars(barsRef.current, raw);
-      volumeRef.current = Math.min(1, (totalSum / BARS) * 2.5);
+      const volume = Math.min(1, (totalSum / BARS) * 2.5);
+      volumeRef.current = volume;
+      // Broadcast for other windows (Today tutorial wave) — fire-and-forget IPC
+      window.api?.sendAudioLevel(volume);
       // Direct DOM update — avoids 60fps React re-renders (rerender-use-ref-transient-values)
       const svg = barsSvgRef.current;
       if (svg) {
@@ -241,6 +244,7 @@ export default function AppPage(): React.JSX.Element {
 
             if (text.trim()) {
               await window.api.pasteText(text);
+              window.api?.sendTranscriptionDone();
             }
             hidePill();
           },
@@ -337,6 +341,7 @@ export default function AppPage(): React.JSX.Element {
 
       if (text.trim()) {
         await window.api.pasteText(text);
+        window.api?.sendTranscriptionDone();
       }
       hidePill();
     } catch (err) {

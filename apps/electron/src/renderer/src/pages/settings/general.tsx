@@ -247,9 +247,11 @@ export default function GeneralSettingsPage(): React.JSX.Element {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">General Settings</h1>
-        <p className="text-muted-foreground mt-1">
-          Configure general application preferences.
+        <h1 className="serif text-foreground text-5xl font-normal leading-[0.95] tracking-tight">
+          Settings<span className="serif-italic text-primary">.</span>
+        </h1>
+        <p className="text-muted-foreground mt-2.5 max-w-xl text-sm leading-relaxed">
+          Configure how Freestyle listens, speaks, and looks.
         </p>
       </div>
 

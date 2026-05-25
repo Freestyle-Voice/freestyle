@@ -6,25 +6,38 @@ import FeedbackPage from "@renderer/pages/settings/feedback";
 import FormatsPage from "@renderer/pages/settings/formats";
 import GeneralSettingsPage from "@renderer/pages/settings/general";
 import HistoryPage from "@renderer/pages/settings/history";
-import SettingsLayout from "@renderer/pages/settings/layout";
 import ModelsPage from "@renderer/pages/settings/models";
-import { Navigate, Route, Routes } from "react-router";
+import AppShell from "@renderer/pages/shell";
+import TodayPage from "@renderer/pages/today";
+import { Navigate, Outlet, Route, Routes } from "react-router";
+
+function PagePad(): React.JSX.Element {
+  return (
+    <div className="px-12 py-9">
+      <Outlet />
+    </div>
+  );
+}
 
 export default function App(): React.JSX.Element {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/app" replace />} />
+      <Route path="/" element={<Navigate to="/today" replace />} />
       <Route path="/app" element={<AppPage />} />
       <Route path="/onboarding" element={<OnboardingPage />} />
-      <Route path="/settings" element={<SettingsLayout />}>
-        <Route index element={<Navigate to="general" replace />} />
-        <Route path="general" element={<GeneralSettingsPage />} />
-        <Route path="models" element={<ModelsPage />} />
-        <Route path="dictionary" element={<DictionaryPage />} />
-        <Route path="formats" element={<FormatsPage />} />
-        <Route path="history" element={<HistoryPage />} />
-        <Route path="feedback" element={<FeedbackPage />} />
+
+      <Route element={<AppShell />}>
+        <Route path="/today" element={<TodayPage />} />
+        <Route element={<PagePad />}>
+          <Route path="/settings" element={<GeneralSettingsPage />} />
+          <Route path="/settings/models" element={<ModelsPage />} />
+          <Route path="/settings/dictionary" element={<DictionaryPage />} />
+          <Route path="/settings/formats" element={<FormatsPage />} />
+          <Route path="/settings/history" element={<HistoryPage />} />
+          <Route path="/settings/feedback" element={<FeedbackPage />} />
+        </Route>
       </Route>
+
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
