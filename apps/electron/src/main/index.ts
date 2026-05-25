@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, realpathSync, statSync } from "node:fs";
-import type { Server } from "node:http";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
@@ -34,7 +33,8 @@ const APP_WIDTH = 440;
 const APP_HEIGHT = 120;
 const APP_BOTTOM_MARGIN = 0;
 
-let httpServer: Server | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let httpServer: any = null;
 let serverPort = DEFAULT_PORT;
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -1067,11 +1067,11 @@ function registerHotkey(hotkey?: string): void {
     e: IGlobalKeyEvent,
     isDown: IGlobalKeyDownMap,
   ): boolean | undefined => {
-    if (e.name !== triggerKey) return;
+    if (e.name !== triggerKey) return undefined;
 
     if (e.state === "DOWN" && !hotkeyPressed) {
       // Check modifiers match
-      if (!modifiersMatch(modifiers, isDown)) return;
+      if (!modifiersMatch(modifiers, isDown)) return undefined;
 
       hotkeyPressed = true;
       showPill();
@@ -1083,6 +1083,8 @@ function registerHotkey(hotkey?: string): void {
       mainWindow?.webContents.send("hotkey:up");
       return true;
     }
+
+    return undefined;
   };
 
   try {
