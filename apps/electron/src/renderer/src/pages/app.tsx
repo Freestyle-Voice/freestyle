@@ -29,8 +29,7 @@ type PillState =
   | "transcribing"
   | "error";
 
-const EXIT_FADE_MS = 150; // phase 1: text fades out
-const EXIT_SHRINK_MS = 250; // phase 2: pill + orb shrink + fade
+const EXIT_ANIM_MS = 400;
 
 // ---------------------------------------------------------------------------
 // Sound system — generates short sine-wave tones via Web Audio API.
@@ -171,7 +170,6 @@ export default function AppPage(): React.JSX.Element {
   }, []);
 
   const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const exitRafRef = useRef(0);
 
   // Go back to idle immediately (for errors, edge cases)
   const goIdle = useCallback(() => {
@@ -179,87 +177,41 @@ export default function AppPage(): React.JSX.Element {
       clearTimeout(exitTimerRef.current);
       exitTimerRef.current = null;
     }
-    cancelAnimationFrame(exitRafRef.current);
+    if (pillRef.current) pillRef.current.classList.remove("pill-exit");
     setState("idle");
     setMessage("");
     setPartialText("");
   }, []);
 
-  // Exit animation (two phases, no React state change during animation):
-  //   Phase 1: text content fades out (orb + pill border stay)
-  //   Phase 2: whole pill (glow + border + orb) shrinks and fades
-  // pillRef is on the glow wrapper (outermost animated element).
+  // Exit animation: add a CSS class that runs a @keyframes animation.
+  // No JS timing, no double-rAF, no inline style manipulation.
+  // animation-fill-mode: forwards holds the final state (opacity: 0)
+  // so there's no flash-back.
   const finishAndHide = useCallback(() => {
     if (exitTimerRef.current) {
       clearTimeout(exitTimerRef.current);
       exitTimerRef.current = null;
     }
-    cancelAnimationFrame(exitRafRef.current);
     const wrapper = pillRef.current;
     if (!wrapper) {
       goIdle();
       return;
     }
-    // The inner pill is the first child of the glow wrapper
-    const pill = wrapper.firstElementChild as HTMLElement | null;
-    if (!pill) {
-      goIdle();
-      return;
-    }
-
-    // -- Phase 1: fade out text (children index 1+ of pill), keep orb --
-    const children = pill.children;
-    for (let i = 1; i < children.length; i++) {
-      const child = children[i] as HTMLElement;
-      child.style.transition = `opacity ${EXIT_FADE_MS}ms ease-out`;
-      child.style.opacity = "0";
-    }
-
-    // -- Phase 2: after text fades, shrink the whole wrapper --
+    // Add the exit animation class — CSS handles everything
+    wrapper.classList.add("pill-exit");
+    // After the animation duration, hide and clean up
     exitTimerRef.current = setTimeout(() => {
-      // Set 'from' state on wrapper, stop any glow animation
-      wrapper.style.animation = "none";
-      wrapper.style.transition = "none";
-      wrapper.style.transform = "scale(1)";
-      wrapper.style.opacity = "1";
-      // Double-rAF for frame boundary
-      exitRafRef.current = requestAnimationFrame(() => {
-        exitRafRef.current = requestAnimationFrame(() => {
-          if (!pillRef.current) return;
-          pillRef.current.style.transition = `transform ${EXIT_SHRINK_MS}ms ease-in-out, opacity ${EXIT_SHRINK_MS}ms ease-in-out`;
-          pillRef.current.style.transform = "scale(0.5)";
-          pillRef.current.style.opacity = "0";
-        });
+      exitTimerRef.current = null;
+      setState("idle");
+      setMessage("");
+      setPartialText("");
+      // Clean up after window is hidden
+      requestAnimationFrame(() => {
+        if (pillRef.current) {
+          pillRef.current.classList.remove("pill-exit");
+        }
       });
-
-      // After shrink completes: hide window first, then reset styles.
-      // Going to idle hides the window, so the style reset is invisible.
-      exitTimerRef.current = setTimeout(() => {
-        exitTimerRef.current = null;
-        // Hide first
-        setState("idle");
-        setMessage("");
-        setPartialText("");
-        // Reset inline styles after hide (window is already invisible)
-        requestAnimationFrame(() => {
-          if (pillRef.current) {
-            pillRef.current.style.animation = "";
-            pillRef.current.style.transition = "";
-            pillRef.current.style.transform = "";
-            pillRef.current.style.opacity = "";
-            const innerPill = pillRef.current
-              .firstElementChild as HTMLElement | null;
-            if (innerPill) {
-              const kids = innerPill.children;
-              for (let i = 1; i < kids.length; i++) {
-                (kids[i] as HTMLElement).style.transition = "";
-                (kids[i] as HTMLElement).style.opacity = "";
-              }
-            }
-          }
-        });
-      }, EXIT_SHRINK_MS + 50);
-    }, EXIT_FADE_MS);
+    }, EXIT_ANIM_MS + 50);
   }, [goIdle]);
 
   // -- Start recording --
@@ -270,21 +222,8 @@ export default function AppPage(): React.JSX.Element {
       clearTimeout(exitTimerRef.current);
       exitTimerRef.current = null;
     }
-    cancelAnimationFrame(exitRafRef.current);
-    // Reset any exit animation inline styles on wrapper and children
     if (pillRef.current) {
-      pillRef.current.style.animation = "";
-      pillRef.current.style.transition = "";
-      pillRef.current.style.transform = "";
-      pillRef.current.style.opacity = "";
-      const pill = pillRef.current.firstElementChild as HTMLElement | null;
-      if (pill) {
-        const kids = pill.children;
-        for (let i = 1; i < kids.length; i++) {
-          (kids[i] as HTMLElement).style.transition = "";
-          (kids[i] as HTMLElement).style.opacity = "";
-        }
-      }
+      pillRef.current.classList.remove("pill-exit");
     }
     wantsMicRef.current = true;
     setMessage("");
@@ -573,6 +512,17 @@ export default function AppPage(): React.JSX.Element {
           .glow-transcribing { animation: glow-pulse-blue 1.5s ease-in-out infinite; }
           .glow-error { animation: glow-pulse-red 1.5s ease-in-out infinite; }
           .glow-idle { box-shadow: 0 0 6px 2px rgba(161,161,170,0.05); transition: box-shadow 300ms ease; }
+
+          @keyframes pill-exit-anim {
+            0%   { transform: scale(1);   opacity: 1; }
+            100% { transform: scale(0.5); opacity: 0; }
+          }
+          .pill-exit {
+            animation: pill-exit-anim ${EXIT_ANIM_MS}ms ease-in-out forwards !important;
+          }
+          .pill-exit * {
+            animation-duration: 0s !important;
+          }
         `}
       </style>
       <div ref={pillRef} className={glowState} style={{ borderRadius: 28 }}>
