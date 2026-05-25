@@ -12,6 +12,17 @@ const DISMISS_MS = 400; // closing animation duration
 const SVG_WIDTH = 140;
 const SVG_HEIGHT = 28;
 
+/** Shared style for right-side text content in the pill */
+const pillTextStyle: React.CSSProperties = {
+  color: "#a1a1aa",
+  fontSize: 13,
+  flex: 1,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  paddingRight: 8,
+};
+
 type PillState =
   | "idle"
   | "initializing"
@@ -28,11 +39,10 @@ type PillState =
 
 let _soundEnabled = true; // cached; updated from settings on mount
 
-type TonePreset = "start" | "stop" | "ready";
+type TonePreset = "start" | "stop";
 const TONE_PRESETS: Record<TonePreset, { freq: number; ms: number }> = {
   start: { freq: 880, ms: 100 },
   stop: { freq: 660, ms: 100 },
-  ready: { freq: 600, ms: 80 },
 };
 
 async function playTone(preset: TonePreset, volume = 0.3): Promise<void> {
@@ -75,6 +85,7 @@ function formatTimer(ms: number): string {
 
 export default function AppPage(): React.JSX.Element {
   const [state, setState] = useState<PillState>("idle");
+  const [dismissActive, setDismissActive] = useState(false); // true = apply scale+fade
   const [elapsed, setElapsed] = useState(0);
   const [message, setMessage] = useState("");
   const [partialText, setPartialText] = useState("");
@@ -159,20 +170,35 @@ export default function AppPage(): React.JSX.Element {
     setElapsed(0);
   }, []);
 
-  // Play the closing animation, then go to idle (which hides the window)
+  // Play the closing animation, then go to idle (which hides the window).
+  // Two-phase: setState("dismissing") renders at full size, then the useEffect
+  // below sets dismissActive=true which applies scale(0.6)+opacity(0) via CSS
+  // transition. This ensures the browser has a "from" frame to transition from.
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dismissPill = useCallback(() => {
-    // Clear any pending dismiss
     if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    setDismissActive(false); // reset so next render is at full size
     setState("dismissing");
-    dismissTimerRef.current = setTimeout(() => {
-      dismissTimerRef.current = null;
-      setState("idle");
-      setMessage("");
-      setPartialText("");
-    }, DISMISS_MS);
+    // The useEffect below handles phase 2
   }, []);
+
+  // Phase 2: after "dismissing" renders at full size, apply the shrink+fade
+  useEffect(() => {
+    if (state !== "dismissing") return;
+    // Use rAF to ensure the "full size" frame is painted first
+    const raf = requestAnimationFrame(() => {
+      setDismissActive(true);
+      dismissTimerRef.current = setTimeout(() => {
+        dismissTimerRef.current = null;
+        setDismissActive(false);
+        setState("idle");
+        setMessage("");
+        setPartialText("");
+      }, DISMISS_MS);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [state]);
 
   // -- Start recording --
   const startRecording = useCallback(async () => {
@@ -182,6 +208,7 @@ export default function AppPage(): React.JSX.Element {
       clearTimeout(dismissTimerRef.current);
       dismissTimerRef.current = null;
     }
+    setDismissActive(false);
     wantsMicRef.current = true;
     setMessage("");
     setPartialText("");
@@ -315,7 +342,7 @@ export default function AppPage(): React.JSX.Element {
       if (recorderRef.current.isRecording()) {
         wavBlob = await recorderRef.current.stop();
       } else {
-        setState("idle");
+        dismissPill();
         return;
       }
 
@@ -503,16 +530,14 @@ export default function AppPage(): React.JSX.Element {
               minWidth: 200,
               maxWidth: 420,
               WebkitAppRegion: "no-drag",
-              transition: isDismissing
-                ? `transform ${DISMISS_MS}ms ease-in-out, opacity ${DISMISS_MS}ms ease-in-out`
-                : "none",
-              transform: isDismissing ? "scale(0.6)" : "scale(1)",
-              opacity: isDismissing ? 0 : 1,
+              transition: `transform ${DISMISS_MS}ms ease-in-out, opacity ${DISMISS_MS}ms ease-in-out`,
+              transform: dismissActive ? "scale(0.6)" : "scale(1)",
+              opacity: dismissActive ? 0 : 1,
             } as React.CSSProperties
           }
         >
           {/* Persistent orb — never unmounts, only props change */}
-          {state !== "idle" && state !== "dismissing" && (
+          {state !== "idle" && (
             <div
               style={{
                 width: 32,
@@ -551,14 +576,7 @@ export default function AppPage(): React.JSX.Element {
 
           {/* Right-side content changes per state */}
           {state === "initializing" && (
-            <span
-              style={{
-                flex: 1,
-                fontSize: 13,
-                color: "#a1a1aa",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <span style={pillTextStyle}>
               <span style={{ opacity: 0.7 }}>Listening...</span>
             </span>
           )}
@@ -625,33 +643,13 @@ export default function AppPage(): React.JSX.Element {
           )}
 
           {state === "transcribing" && (
-            <span
-              style={{
-                color: "#a1a1aa",
-                fontSize: 13,
-                flex: 1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                paddingRight: 8,
-              }}
-            >
+            <span style={pillTextStyle}>
               {partialText ? partialText.slice(-30) : "Transcribing..."}
             </span>
           )}
 
           {state === "pasted" && (
-            <span
-              style={{
-                color: "#a1a1aa",
-                fontSize: 13,
-                flex: 1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                paddingRight: 8,
-              }}
-            >
+            <span style={pillTextStyle}>
               <Check
                 size={14}
                 style={{
@@ -666,19 +664,7 @@ export default function AppPage(): React.JSX.Element {
           )}
 
           {state === "error" && (
-            <span
-              style={{
-                color: "#a1a1aa",
-                fontSize: 13,
-                flex: 1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                paddingRight: 8,
-              }}
-            >
-              {message || "Error"}
-            </span>
+            <span style={pillTextStyle}>{message || "Error"}</span>
           )}
 
           {state === "idle" && (
