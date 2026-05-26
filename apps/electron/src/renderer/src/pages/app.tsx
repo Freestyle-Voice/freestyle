@@ -591,41 +591,44 @@ export default function AppPage(): React.JSX.Element {
             } as React.CSSProperties
           }
         >
-          {/* Orb — conditionally rendered per state */}
-          {state !== "idle" && (
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                overflow: "hidden",
-                flexShrink: 0,
-                border: "1.5px solid rgba(255, 255, 255, 0.15)",
-                background: "transparent",
-              }}
-            >
-              <Orb
-                colors={
-                  state === "error"
-                    ? ["#DD6E4E", "#B85C3A"]
-                    : state === "transcribing"
-                      ? ["#60A5FA", "#3B82F6"]
-                      : ["#8AB62A", "#6B8F12"]
-                }
-                agentState={
-                  state === "recording" || state === "initializing"
-                    ? "listening"
-                    : state === "transcribing"
-                      ? "talking"
-                      : null
-                }
-                getInputVolume={
-                  state === "recording" ? getInputVolume : undefined
-                }
-                className="h-full w-full"
-              />
-            </div>
-          )}
+          {/* Orb — always mounted to avoid Three.js re-init jitter */}
+          <div
+            style={{
+              width: state === "idle" ? 0 : 32,
+              height: 32,
+              borderRadius: "50%",
+              overflow: "hidden",
+              flexShrink: 0,
+              border:
+                state !== "idle"
+                  ? "1.5px solid rgba(255, 255, 255, 0.15)"
+                  : "none",
+              background: "transparent",
+              opacity: state === "idle" ? 0 : 1,
+              transition: "width 0.15s ease, opacity 0.15s ease",
+            }}
+          >
+            <Orb
+              colors={
+                state === "error"
+                  ? ["#DD6E4E", "#B85C3A"]
+                  : state === "transcribing"
+                    ? ["#60A5FA", "#3B82F6"]
+                    : ["#8AB62A", "#6B8F12"]
+              }
+              agentState={
+                state === "recording" || state === "initializing"
+                  ? "listening"
+                  : state === "transcribing"
+                    ? "talking"
+                    : null
+              }
+              getInputVolume={
+                state === "recording" ? getInputVolume : undefined
+              }
+              className="h-full w-full"
+            />
+          </div>
 
           {/* Right-side content changes per state */}
           {(state === "initializing" || state === "recording") && (

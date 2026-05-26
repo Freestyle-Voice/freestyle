@@ -90,7 +90,14 @@ function Scene({
   getInputVolume?: () => number;
   getOutputVolume?: () => number;
 }) {
-  const { gl } = useThree();
+  const { gl, scene } = useThree();
+
+  // Transparent background — prevent Three.js default black
+  useEffect(() => {
+    gl.setClearColor(0x000000, 0);
+    scene.background = null;
+  }, [gl, scene]);
+
   const circleRef = useRef<Mesh<CircleGeometry, ShaderMaterial>>(null);
   const initialColorsRef = useRef<[string, string]>(colors);
   const targetColor1Ref = useRef(new Color(colors[0]));
