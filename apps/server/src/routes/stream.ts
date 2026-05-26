@@ -96,9 +96,11 @@ const stream = new Hono().get(
           onFinal: (rawText) => {
             const durationMs = Date.now() - sessionStartTime;
 
-            console.log(
-              `[stream] onFinal: rawText=${JSON.stringify(rawText)}, audioDurationMs=${audioDurationMs}, durationMs=${durationMs}`,
-            );
+            if (process.env.NODE_ENV !== "production") {
+              console.log(
+                `[stream] onFinal: rawText=${JSON.stringify(rawText)}, audioDurationMs=${audioDurationMs}, durationMs=${durationMs}`,
+              );
+            }
 
             // Skip empty transcriptions entirely — don't send to client
             if (!rawText?.trim()) {

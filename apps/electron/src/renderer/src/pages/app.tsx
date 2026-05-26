@@ -95,6 +95,8 @@ export default function AppPage(): React.JSX.Element {
   const recorderRef = useRef(new Recorder());
   const streamerRef = useRef<Streamer | null>(null);
   const analyserCtxRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const analyserNodeRef = useRef<AnalyserNode | null>(null);
   const barsRef = useRef<number[]>(new Array(BARS).fill(0));
   const barsSvgRef = useRef<SVGSVGElement>(null);
   const volumeRef = useRef(0);
@@ -118,9 +120,13 @@ export default function AppPage(): React.JSX.Element {
         onReady: () => {},
         onPartial: (text) => setPartialText(text),
         onFinal: async (text) => {
+          wantsMicRef.current = false;
+          stopVisualization();
           recorderRef.current.cancel();
           recorderRef.current.releaseStream();
-          console.log("[app] onFinal:", JSON.stringify(text));
+          if (import.meta.env.DEV) {
+            console.log("[app] onFinal:", JSON.stringify(text));
+          }
           if (text.trim()) {
             await window.api.pasteText(text);
             window.api?.sendTranscriptionDone();
@@ -128,6 +134,8 @@ export default function AppPage(): React.JSX.Element {
           hidePill();
         },
         onError: (msg) => {
+          wantsMicRef.current = false;
+          stopVisualization();
           recorderRef.current.cancel();
           recorderRef.current.releaseStream();
           setState("error");
@@ -145,11 +153,22 @@ export default function AppPage(): React.JSX.Element {
       analyserCtxRef.current = new AudioContext();
     }
     const ctx = analyserCtxRef.current;
+
+    // Disconnect previous nodes to avoid leaking them on the AudioContext
+    try {
+      audioSourceRef.current?.disconnect();
+    } catch {}
+    try {
+      analyserNodeRef.current?.disconnect();
+    } catch {}
+
     const source = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.4;
     source.connect(analyser);
+    audioSourceRef.current = source;
+    analyserNodeRef.current = analyser;
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     const sliceSize = Math.floor(analyser.frequencyBinCount / BARS);
@@ -157,7 +176,6 @@ export default function AppPage(): React.JSX.Element {
 
     const update = () => {
       if (!wantsMicRef.current) {
-        source.disconnect();
         return;
       }
       analyser.getByteFrequencyData(dataArray);
@@ -203,6 +221,15 @@ export default function AppPage(): React.JSX.Element {
     rafRef.current = 0;
     clearInterval(timerRef.current);
     timerRef.current = 0;
+    // Disconnect audio nodes to prevent accumulation on the AudioContext
+    try {
+      audioSourceRef.current?.disconnect();
+    } catch {}
+    try {
+      analyserNodeRef.current?.disconnect();
+    } catch {}
+    audioSourceRef.current = null;
+    analyserNodeRef.current = null;
     // Don't close analyserCtxRef — we reuse it across sessions
     barsRef.current = new Array(BARS).fill(0);
     volumeRef.current = 0;
@@ -358,7 +385,9 @@ export default function AppPage(): React.JSX.Element {
 
       const data = await res.json();
       const text = data.cleaned || data.raw || "";
-      console.log("[app] transcribe response:", JSON.stringify(data));
+      if (import.meta.env.DEV) {
+        console.log("[app] transcribe response:", JSON.stringify(data));
+      }
 
       if (text.trim()) {
         await window.api.pasteText(text);

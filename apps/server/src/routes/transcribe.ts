@@ -75,9 +75,11 @@ const transcribeRoute = new Hono().post("/", async (c) => {
       ...(language && language !== "auto" ? { language } : {}),
     });
     rawText = result.text;
-    console.log(
-      `[transcribe] rawText=${JSON.stringify(rawText)}, audioDurationMs=${audioDurationMs}`,
-    );
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        `[transcribe] rawText=${JSON.stringify(rawText)}, audioDurationMs=${audioDurationMs}`,
+      );
+    }
   } catch (err) {
     return c.json(
       {
