@@ -103,7 +103,6 @@ export default function AppPage(): React.JSX.Element {
   const timerRef = useRef<number>(0);
   const wantsMicRef = useRef(false);
   const appContextRef = useRef<string | null>(null);
-  const micWarmedUp = useRef(false);
   const pendingCommitRef = useRef(false);
   const commitRef = useRef<() => void>(() => {});
 
@@ -240,13 +239,7 @@ export default function AppPage(): React.JSX.Element {
         appContextRef.current = null;
       });
 
-    const isFirstPress = !micWarmedUp.current;
-    if (isFirstPress) {
-      setState("initializing");
-    } else {
-      setState("recording");
-      playTone("start");
-    }
+    setState("initializing");
 
     try {
       // When streaming is active, skip MediaRecorder entirely — the
@@ -260,11 +253,8 @@ export default function AppPage(): React.JSX.Element {
         return;
       }
 
-      if (isFirstPress) {
-        micWarmedUp.current = true;
-        playTone("start");
-        setState("recording");
-      }
+      playTone("start");
+      setState("recording");
 
       if (pendingCommitRef.current) {
         pendingCommitRef.current = false;
