@@ -721,7 +721,6 @@ app.whenReady().then(() => {
     UiohookKey.MetaRight,
     UiohookKey.Shift,
     UiohookKey.ShiftRight,
-    0, // Fn/Globe key on macOS (libuiohook reports keycode 0)
   ]);
 
   ipcMain.on("hotkey-record:start", () => {
