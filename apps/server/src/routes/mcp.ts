@@ -1,3 +1,9 @@
+import {
+  createDictionarySchema,
+  createFormatSchema,
+  updateDictionarySchema,
+  updateFormatSchema,
+} from "@freestyle/validations";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Hono } from "hono";
@@ -11,7 +17,7 @@ async function call(
   method: string,
   path: string,
   body?: unknown,
-): Promise<{ data: any; ok: boolean; status: number }> {
+): Promise<{ data: any; ok: boolean }> {
   const init: RequestInit = { method };
   if (body) {
     init.headers = { "Content-Type": "application/json" };
@@ -19,7 +25,7 @@ async function call(
   }
   const res = await app.request(path, init);
   const data = await res.json();
-  return { data, ok: res.ok, status: res.status };
+  return { data, ok: res.ok };
 }
 
 function text(value: unknown) {
@@ -35,6 +41,14 @@ function error(message: string) {
   };
 }
 
+const listParams = {
+  limit: z.number().int().min(1).max(200).default(50).describe("Max results"),
+  offset: z.number().int().min(0).default(0).describe("Pagination offset"),
+  search: z.string().optional().describe("Filter by keyword"),
+};
+
+const idParam = { id: z.number().int().describe("Record ID") };
+
 const mcpServer = new McpServer({
   name: "freestyle",
   version: "0.0.2",
@@ -45,14 +59,7 @@ const mcpServer = new McpServer({
 mcpServer.tool(
   "format_list",
   "List formatting rules with optional search and pagination",
-  {
-    limit: z.number().int().min(1).max(200).default(50).describe("Max results"),
-    offset: z.number().int().min(0).default(0).describe("Pagination offset"),
-    search: z
-      .string()
-      .optional()
-      .describe("Search label, pattern, or instructions"),
-  },
+  listParams,
   async ({ limit, offset, search }) => {
     const params = new URLSearchParams({
       limit: String(limit),
@@ -67,7 +74,7 @@ mcpServer.tool(
 mcpServer.tool(
   "format_view",
   "View a single formatting rule by ID",
-  { id: z.number().int().describe("Format rule ID") },
+  idParam,
   async ({ id }) => {
     const { data } = await call(formats, "GET", "/?limit=200");
     const row = data.items?.find((r: any) => r.id === id);
@@ -79,13 +86,7 @@ mcpServer.tool(
 mcpServer.tool(
   "format_create",
   "Create a new formatting rule",
-  {
-    app_pattern: z
-      .string()
-      .describe("App pattern to match (e.g. 'slack|discord')"),
-    label: z.string().describe("Display label"),
-    instructions: z.string().describe("Formatting instructions for the LLM"),
-  },
+  createFormatSchema.shape,
   async (args) => {
     const { data, ok } = await call(formats, "POST", "/", args);
     if (!ok) return error(data.error ?? "Failed to create format rule");
@@ -96,12 +97,7 @@ mcpServer.tool(
 mcpServer.tool(
   "format_update",
   "Update an existing formatting rule",
-  {
-    id: z.number().int().describe("Format rule ID"),
-    app_pattern: z.string().optional().describe("New app pattern"),
-    label: z.string().optional().describe("New label"),
-    instructions: z.string().optional().describe("New instructions"),
-  },
+  { ...idParam, ...updateFormatSchema.shape },
   async ({ id, ...body }) => {
     const { data, ok } = await call(formats, "PUT", `/${id}`, body);
     if (!ok) return error(data.error ?? `Format rule #${id} not found`);
@@ -112,7 +108,7 @@ mcpServer.tool(
 mcpServer.tool(
   "format_delete",
   "Delete a formatting rule",
-  { id: z.number().int().describe("Format rule ID") },
+  idParam,
   async ({ id }) => {
     await call(formats, "DELETE", `/${id}`);
     return text({ ok: true, id });
@@ -124,11 +120,7 @@ mcpServer.tool(
 mcpServer.tool(
   "dict_list",
   "List dictionary entries with optional search and pagination",
-  {
-    limit: z.number().int().min(1).max(200).default(50).describe("Max results"),
-    offset: z.number().int().min(0).default(0).describe("Pagination offset"),
-    search: z.string().optional().describe("Search by key or value"),
-  },
+  listParams,
   async ({ limit, offset, search }) => {
     const params = new URLSearchParams({
       limit: String(limit),
@@ -143,7 +135,7 @@ mcpServer.tool(
 mcpServer.tool(
   "dict_view",
   "View a single dictionary entry by ID",
-  { id: z.number().int().describe("Dictionary entry ID") },
+  idParam,
   async ({ id }) => {
     const { data, ok } = await call(dictionary, "GET", `/${id}`);
     if (!ok) return error(`Dictionary entry #${id} not found`);
@@ -154,10 +146,7 @@ mcpServer.tool(
 mcpServer.tool(
   "dict_create",
   "Create a new dictionary entry (word replacement)",
-  {
-    key: z.string().describe("Word or phrase to match"),
-    value: z.string().describe("Replacement text"),
-  },
+  createDictionarySchema.shape,
   async (args) => {
     const { data, ok } = await call(dictionary, "POST", "/", args);
     if (!ok) return error(data.error ?? "Failed to create dictionary entry");
@@ -168,11 +157,7 @@ mcpServer.tool(
 mcpServer.tool(
   "dict_update",
   "Update an existing dictionary entry",
-  {
-    id: z.number().int().describe("Dictionary entry ID"),
-    key: z.string().optional().describe("New key"),
-    value: z.string().optional().describe("New value"),
-  },
+  { ...idParam, ...updateDictionarySchema.shape },
   async ({ id, ...body }) => {
     const { data, ok } = await call(dictionary, "PUT", `/${id}`, body);
     if (!ok) return error(data.error ?? `Dictionary entry #${id} not found`);
@@ -183,7 +168,7 @@ mcpServer.tool(
 mcpServer.tool(
   "dict_delete",
   "Delete a dictionary entry",
-  { id: z.number().int().describe("Dictionary entry ID") },
+  idParam,
   async ({ id }) => {
     await call(dictionary, "DELETE", `/${id}`);
     return text({ ok: true, id });
@@ -195,14 +180,7 @@ mcpServer.tool(
 mcpServer.tool(
   "history_list",
   "List transcription history with optional search and pagination",
-  {
-    limit: z.number().int().min(1).max(200).default(20).describe("Max results"),
-    offset: z.number().int().min(0).default(0).describe("Pagination offset"),
-    search: z
-      .string()
-      .optional()
-      .describe("Search transcription text or model"),
-  },
+  listParams,
   async ({ limit, offset, search }) => {
     const params = new URLSearchParams({
       limit: String(limit),
@@ -210,16 +188,6 @@ mcpServer.tool(
     });
     if (search) params.set("search", search);
     const { data } = await call(history, "GET", `/?${params}`);
-    return text(data);
-  },
-);
-
-mcpServer.tool(
-  "history_stats",
-  "Get transcription usage statistics",
-  {},
-  async () => {
-    const { data } = await call(history, "GET", "/stats");
     return text(data);
   },
 );
