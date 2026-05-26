@@ -16,6 +16,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   Notification,
@@ -78,6 +79,7 @@ let settingsWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let keyListener: GlobalKeyboardListener | null = null;
 let hotkeyPressed = false;
+let winToggleActive = false;
 let currentHotkeyAccel: string | null = null;
 
 /**
@@ -199,6 +201,7 @@ function getAppWindowPosition(): { x: number; y: number } {
 function createAppWindow(): void {
   const { x, y } = getAppWindowPosition();
 
+  winToggleActive = false;
   mainWindow = new BrowserWindow({
     width: APP_WIDTH,
     height: APP_HEIGHT,
@@ -245,8 +248,9 @@ function createSettingsWindow(): void {
     height: 560,
     show: false,
     autoHideMenuBar: true,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 16 },
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    trafficLightPosition:
+      process.platform === "darwin" ? { x: 16, y: 16 } : undefined,
     ...(process.platform === "linux" ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
@@ -717,6 +721,15 @@ app.whenReady().then(() => {
       }
       keyListener = null;
     }
+    // GlobalKeyboardListener requires WinKeyServer.exe which isn't shipped on Windows.
+    // Hotkey recording is not supported on Windows — cancel and re-register.
+    if (process.platform === "win32") {
+      globalShortcut.unregisterAll();
+      winToggleActive = false;
+      settingsWindow?.webContents.send("hotkey-record:cancel");
+      registerHotkey(currentHotkeyAccel ?? undefined);
+      return;
+    }
 
     // Ensure binary is executable / signed before starting recording listener
     ensureMacKeyServerExecutable();
@@ -1137,6 +1150,10 @@ function registerHotkey(hotkey?: string): void {
     keyListener = null;
   }
   hotkeyPressed = false;
+  if (process.platform === "win32") {
+    globalShortcut.unregisterAll();
+    winToggleActive = false;
+  }
 
   if (!hotkey) {
     hotkey = loadHotkeyFromDB();
@@ -1144,6 +1161,30 @@ function registerHotkey(hotkey?: string): void {
 
   const accel = hotkey && isValidAccelerator(hotkey) ? hotkey : DEFAULT_HOTKEY;
   currentHotkeyAccel = accel;
+
+  // Windows: WinKeyServer.exe is not reliably available, fall back to
+  // Electron's globalShortcut in toggle mode (press once to start, press again to stop).
+  if (process.platform === "win32") {
+    const registered = globalShortcut.register(accel, () => {
+      if (!winToggleActive) {
+        winToggleActive = true;
+        showPill();
+        mainWindow?.webContents.send("hotkey:down");
+      } else {
+        winToggleActive = false;
+        mainWindow?.webContents.send("hotkey:up");
+      }
+    });
+    if (!registered) {
+      const errorPayload = {
+        message: `Could not register hotkey "${accel}". Try a different key combination in Settings.`,
+      };
+      mainWindow?.webContents.send("hotkey:error", errorPayload);
+      settingsWindow?.webContents.send("hotkey:error", errorPayload);
+    }
+    return;
+  }
+
   const { modifiers, key: triggerKey } = parseAccelerator(accel);
 
   try {
@@ -1210,6 +1251,9 @@ app.on("will-quit", () => {
       /* ignore */
     }
     keyListener = null;
+  }
+  if (process.platform === "win32") {
+    globalShortcut.unregisterAll();
   }
 });
 
