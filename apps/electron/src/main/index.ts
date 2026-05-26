@@ -5,7 +5,7 @@ Sentry.init({
   enabled: process.env.NODE_ENV === "production",
 });
 
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -330,8 +330,6 @@ function execAsync(
   args: string[],
   timeoutMs: number,
 ): Promise<string> {
-  const { execFile } =
-    require("node:child_process") as typeof import("node:child_process");
   return new Promise((resolve, reject) => {
     execFile(
       cmd,
