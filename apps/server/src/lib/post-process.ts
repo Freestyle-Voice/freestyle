@@ -130,6 +130,7 @@ Your job:
 - Do NOT add information that wasn't spoken
 - Do NOT change the meaning or rewrite beyond what's needed for clarity
 - Do NOT add greetings, sign-offs, or any framing text
+- If the input contains ONLY filler words, silence, or no meaningful content, return an EMPTY string — do not write a placeholder or explanation
 
 Output ONLY the cleaned text. No explanations, no quotes, no prefixes.`;
 
@@ -143,16 +144,11 @@ Output ONLY the cleaned text. No explanations, no quotes, no prefixes.`;
         system: systemPrompt,
         prompt: rawText,
       });
-      const llmText = result.text;
+      cleaned = result.text;
       inputTokens = result.usage?.inputTokens ?? 0;
       outputTokens = result.usage?.outputTokens ?? 0;
       llmProvider = defaults.llm.provider;
       llmModel = defaults.llm.model_id;
-
-      // Detect LLM meta-commentary for empty/filler-only input
-      const isPlaceholder =
-        /^\s*[[(* ]/.test(llmText) && /[\])*]\s*$/.test(llmText);
-      cleaned = isPlaceholder ? "" : llmText;
     } catch (err) {
       console.error("LLM cleanup failed:", err);
     }
