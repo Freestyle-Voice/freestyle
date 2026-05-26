@@ -253,7 +253,10 @@ export default function AppPage(): React.JSX.Element {
 
   // Hide the pill and reset to idle so the next show starts clean
   const hidePill = useCallback(() => {
-    if (import.meta.env.DEV) window.api.debugLog("[rec] hidePill called");
+    if (import.meta.env.DEV) {
+      const stack = new Error().stack?.split("\n").slice(1, 4).join(" <- ");
+      window.api.debugLog("[rec] hidePill called from:", stack);
+    }
     setState("idle");
     setPartialText("");
     setMessage("");
