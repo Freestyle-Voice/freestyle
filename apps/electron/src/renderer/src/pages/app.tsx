@@ -121,16 +121,8 @@ export default function AppPage(): React.JSX.Element {
         onReady: () => {},
         onPartial: (text) => setPartialText(text),
         onFinal: async (text) => {
-          // Ignore stale finals from previous sessions / reconnects
-          const sid = sessionIdRef.current;
-          if (import.meta.env.DEV)
-            window.api.debugLog(
-              "[rec] onFinal sid:",
-              sid,
-              "state:",
-              stateRef.current,
-            );
-          if (sid === 0) return;
+          if (sessionIdRef.current === 0) return;
+
           wantsMicRef.current = false;
           sessionIdRef.current = 0;
           stopVisualization();
@@ -143,11 +135,7 @@ export default function AppPage(): React.JSX.Element {
           hidePill();
         },
         onError: (msg) => {
-          // Ignore connection-time errors and stale errors from previous sessions
-          const sid = sessionIdRef.current;
-          if (import.meta.env.DEV)
-            window.api.debugLog("[rec] onError sid:", sid, "msg:", msg);
-          if (sid === 0) return;
+          if (sessionIdRef.current === 0) return;
           wantsMicRef.current = false;
           sessionIdRef.current = 0;
           stopVisualization();
@@ -253,10 +241,6 @@ export default function AppPage(): React.JSX.Element {
 
   // Hide the pill and reset to idle so the next show starts clean
   const hidePill = useCallback(() => {
-    if (import.meta.env.DEV) {
-      const stack = new Error().stack?.split("\n").slice(1, 4).join(" <- ");
-      window.api.debugLog("[rec] hidePill called from:", stack);
-    }
     setState("idle");
     setPartialText("");
     setMessage("");
@@ -270,7 +254,6 @@ export default function AppPage(): React.JSX.Element {
     pendingCommitRef.current = false;
     setMessage("");
     setPartialText("");
-    if (import.meta.env.DEV) window.api.debugLog("[rec] startRecording");
 
     window.api
       ?.getFrontmostApp()
@@ -291,19 +274,11 @@ export default function AppPage(): React.JSX.Element {
     try {
       // When streaming is active, skip MediaRecorder entirely — the
       // Streamer accumulates PCM16 and can produce a WAV if needed.
-      if (import.meta.env.DEV)
-        console.log(
-          "[rec] acquiring stream, streaming:",
-          useStreamingRef.current,
-        );
       const stream = useStreamingRef.current
         ? await recorderRef.current.acquireStream()
         : await recorderRef.current.start();
-      if (import.meta.env.DEV) window.api.debugLog("[rec] stream acquired");
 
       if (!wantsMicRef.current) {
-        if (import.meta.env.DEV)
-          window.api.debugLog("[rec] abort: wantsMic=false");
         recorderRef.current.cancel();
         recorderRef.current.releaseStream();
         return;
@@ -313,8 +288,6 @@ export default function AppPage(): React.JSX.Element {
       // treat as an aborted press: release the mic and hide the pill
       // without flashing the recording state or playing a tone.
       if (pendingCommitRef.current) {
-        if (import.meta.env.DEV)
-          window.api.debugLog("[rec] abort: pendingCommit");
         pendingCommitRef.current = false;
         recorderRef.current.cancel();
         recorderRef.current.releaseStream();
@@ -323,7 +296,6 @@ export default function AppPage(): React.JSX.Element {
         return;
       }
 
-      if (import.meta.env.DEV) window.api.debugLog("[rec] → recording");
       sessionIdRef.current++;
       playTone("start");
       setState("recording");
