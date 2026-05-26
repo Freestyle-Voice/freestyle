@@ -158,16 +158,22 @@ export default function AppPage(): React.JSX.Element {
         onReady: () => {},
         onPartial: (text) => setPartialText(text),
         onFinal: async (text) => {
-          if (sessionIdRef.current === 0) return;
+          console.log(
+            `[onFinal] text=${JSON.stringify(text?.slice(0, 60))}, sessionId=${sessionIdRef.current}, wantsMic=${wantsMicRef.current}, awaitingFirst=${awaitingFirstResultRef.current}, isReRecording=${isReRecordingRef.current}, hasDeferredCommit=${!!deferredCommitRef.current}`,
+          );
+          if (sessionIdRef.current === 0) {
+            console.log("[onFinal] SKIP: sessionId is 0");
+            return;
+          }
 
-          // If we are awaiting the first result before sending the
-          // deferred second commit, handle it here.
           if (awaitingFirstResultRef.current) {
+            console.log(
+              "[onFinal] PATH: awaiting first result → store + fire deferred commit",
+            );
             awaitingFirstResultRef.current = false;
             const stored = text.trim() || null;
             previousTextRef.current = stored;
 
-            // Fire the deferred commit now that we have the first text.
             const deferred = deferredCommitRef.current;
             deferredCommitRef.current = null;
             if (deferred && stored) {
@@ -178,14 +184,13 @@ export default function AppPage(): React.JSX.Element {
             return;
           }
 
-          // If the user is still recording (re-record in progress),
-          // store the text and wait for them to finish.
           if (wantsMicRef.current) {
+            console.log("[onFinal] PATH: user still recording → store text");
             previousTextRef.current = text.trim() || null;
             return;
           }
 
-          // Normal path — this is the final result; paste and close.
+          console.log("[onFinal] PATH: normal → paste and hide");
           wantsMicRef.current = false;
           sessionIdRef.current = 0;
           stopVisualization();
@@ -198,8 +203,9 @@ export default function AppPage(): React.JSX.Element {
           hidePill();
         },
         onCleaned: (text) => {
-          // If the user is still recording or we're waiting for the
-          // first result, update previousText with the cleaned version.
+          console.log(
+            `[onCleaned] text=${JSON.stringify(text?.slice(0, 60))}, wantsMic=${wantsMicRef.current}, awaitingFirst=${awaitingFirstResultRef.current}`,
+          );
           if (wantsMicRef.current || awaitingFirstResultRef.current) {
             if (text.trim()) {
               previousTextRef.current = text.trim();
@@ -207,17 +213,16 @@ export default function AppPage(): React.JSX.Element {
             return;
           }
 
-          // Normal flow: paste the cleaned text (replaces the raw text
-          // that was already pasted by onFinal).
           if (text.trim()) {
             window.api.pasteText(text);
           }
         },
         onError: (msg) => {
+          console.log(
+            `[onError] msg=${msg}, sessionId=${sessionIdRef.current}, wantsMic=${wantsMicRef.current}`,
+          );
           if (sessionIdRef.current === 0) return;
 
-          // If the user is still recording, don't hide — let the
-          // recording continue. Clear the stored text since it errored.
           if (wantsMicRef.current) {
             previousTextRef.current = null;
             awaitingFirstResultRef.current = false;
@@ -332,6 +337,7 @@ export default function AppPage(): React.JSX.Element {
 
   // Hide the pill and reset to idle so the next show starts clean
   const hidePill = useCallback(() => {
+    console.log("[hidePill] called");
     setState("idle");
     setPartialText("");
     setMessage("");
@@ -349,7 +355,13 @@ export default function AppPage(): React.JSX.Element {
   // previous transcription is still in progress.
   const startRecording = useCallback(
     async (forReRecord = false) => {
-      if (wantsMicRef.current) return;
+      console.log(
+        `[startRecording] forReRecord=${forReRecord}, wantsMic=${wantsMicRef.current}, sessionId=${sessionIdRef.current}`,
+      );
+      if (wantsMicRef.current) {
+        console.log("[startRecording] SKIP: wantsMic already true");
+        return;
+      }
       wantsMicRef.current = true;
       pendingCommitRef.current = false;
       setMessage("");
@@ -444,8 +456,11 @@ export default function AppPage(): React.JSX.Element {
 
   // -- Commit: stop recording and transcribe --
   const commitRecording = useCallback(async () => {
-    wantsMicRef.current = false;
     const wasReRecording = isReRecordingRef.current;
+    console.log(
+      `[commitRecording] wasReRecording=${wasReRecording}, wantsMic=${wantsMicRef.current}, sessionId=${sessionIdRef.current}, previousText=${JSON.stringify(previousTextRef.current?.slice(0, 40))}, awaitingFirst=${awaitingFirstResultRef.current}`,
+    );
+    wantsMicRef.current = false;
     isReRecordingRef.current = false;
     setIsReRecording(false);
     stopVisualization();
@@ -453,6 +468,7 @@ export default function AppPage(): React.JSX.Element {
 
     const recordingDuration = Date.now() - startTimeRef.current;
     if (recordingDuration < 1000) {
+      console.log("[commitRecording] short recording (<1s), cancelling");
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
       streamerRef.current?.cancel();
@@ -482,13 +498,20 @@ export default function AppPage(): React.JSX.Element {
       recorderRef.current.releaseStream();
 
       if (wasReRecording && !prevText) {
-        // The first result hasn't arrived yet. Defer the commit
-        // until onFinal delivers it, so the server can combine them.
+        console.log(
+          "[commitRecording] streaming: deferring commit — awaiting first result",
+        );
         awaitingFirstResultRef.current = true;
         deferredCommitRef.current = (firstText: string) => {
+          console.log(
+            `[deferredCommit] firing with firstText=${JSON.stringify(firstText?.slice(0, 40))}`,
+          );
           streamerRef.current?.commit(firstText || undefined);
         };
       } else {
+        console.log(
+          `[commitRecording] streaming: immediate commit, prevText=${JSON.stringify(prevText?.slice(0, 40))}`,
+        );
         streamerRef.current.commit(prevText ?? undefined);
       }
       return;
@@ -593,6 +616,7 @@ export default function AppPage(): React.JSX.Element {
   useEffect(() => {
     const removeDown = window.api.onHotkeyDown(() => {
       const s = stateRef.current;
+      console.log(`[hotkeyDown] state=${s}, wantsMic=${wantsMicRef.current}`);
       if (s === "idle" || s === "error") {
         startRecording(false);
       } else if (s === "transcribing") {
@@ -600,6 +624,9 @@ export default function AppPage(): React.JSX.Element {
       }
     });
     const removeUp = window.api.onHotkeyUp(() => {
+      console.log(
+        `[hotkeyUp] state=${stateRef.current}, wantsMic=${wantsMicRef.current}`,
+      );
       if (stateRef.current === "recording") {
         commitRecording();
       } else if (stateRef.current === "initializing") {
