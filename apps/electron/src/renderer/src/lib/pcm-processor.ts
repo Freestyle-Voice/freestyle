@@ -13,10 +13,15 @@ const TARGET_CHUNK_MS = 80;
 class PCMProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // sampleRate is a global in AudioWorkletGlobalScope
     this.ratio = sampleRate / TARGET_RATE;
     this.targetChunkSamples = (TARGET_RATE * TARGET_CHUNK_MS) / 1000;
-    this.buf = new Float32Array(0);
+    this.samplesNeeded = Math.ceil(this.targetChunkSamples * this.ratio);
+    // Pre-allocated ring buffer — sized for ~200ms of audio at the native
+    // sample rate, which is well above the ~80ms flush interval.
+    this.ringLen = this.samplesNeeded * 4;
+    this.ring = new Float32Array(this.ringLen);
+    this.writePos = 0;
+    this.available = 0;
   }
 
   process(inputs) {
@@ -24,29 +29,27 @@ class PCMProcessor extends AudioWorkletProcessor {
     if (!input || !input[0] || input[0].length === 0) return true;
 
     const raw = input[0];
+    const len = raw.length;
 
-    // Append to internal buffer
-    const prev = this.buf;
-    const next = new Float32Array(prev.length + raw.length);
-    next.set(prev);
-    next.set(raw, prev.length);
-    this.buf = next;
+    // Write incoming samples into the ring buffer
+    for (let i = 0; i < len; i++) {
+      this.ring[this.writePos] = raw[i];
+      this.writePos = (this.writePos + 1) % this.ringLen;
+    }
+    this.available += len;
 
     // Flush when we have enough for one target chunk
-    const samplesNeeded = Math.ceil(this.targetChunkSamples * this.ratio);
-    while (this.buf.length >= samplesNeeded) {
-      const slice = this.buf.subarray(0, samplesNeeded);
-      this.buf = this.buf.slice(samplesNeeded);
-
-      // Downsample + encode to PCM16
-      const outLen = Math.round(slice.length / this.ratio);
+    while (this.available >= this.samplesNeeded) {
+      const readPos = (this.writePos - this.available + this.ringLen) % this.ringLen;
+      const outLen = Math.round(this.samplesNeeded / this.ratio);
       const pcm16 = new Int16Array(outLen);
       for (let i = 0; i < outLen; i++) {
-        const idx = Math.round(i * this.ratio);
-        const s = Math.max(-1, Math.min(1, slice[idx] || 0));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        const srcIdx = Math.round(i * this.ratio);
+        const ringIdx = (readPos + srcIdx) % this.ringLen;
+        const s = Math.max(-1, Math.min(1, this.ring[ringIdx] || 0));
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
       }
-
+      this.available -= this.samplesNeeded;
       this.port.postMessage(pcm16.buffer, [pcm16.buffer]);
     }
 

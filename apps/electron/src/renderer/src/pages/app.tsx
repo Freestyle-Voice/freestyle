@@ -150,6 +150,7 @@ export default function AppPage(): React.JSX.Element {
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     const sliceSize = Math.floor(analyser.frequencyBinCount / BARS);
+    let lastIpcTime = 0;
 
     const update = () => {
       if (!wantsMicRef.current) {
@@ -171,8 +172,12 @@ export default function AppPage(): React.JSX.Element {
       barsRef.current = smoothBars(barsRef.current, raw);
       const volume = Math.min(1, (totalSum / BARS) * 2.5);
       volumeRef.current = volume;
-      // Broadcast for other windows (Today tutorial wave) — fire-and-forget IPC
-      window.api?.sendAudioLevel(volume);
+      // Throttle IPC to ~10fps to reduce main-process event-loop pressure
+      const now = performance.now();
+      if (now - lastIpcTime >= 100) {
+        lastIpcTime = now;
+        window.api?.sendAudioLevel(volume);
+      }
       // Direct DOM update — avoids 60fps React re-renders (rerender-use-ref-transient-values)
       const svg = barsSvgRef.current;
       if (svg) {
@@ -193,7 +198,7 @@ export default function AppPage(): React.JSX.Element {
   const stopVisualization = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
     rafRef.current = 0;
-    cancelAnimationFrame(timerRef.current);
+    clearInterval(timerRef.current);
     timerRef.current = 0;
     // Don't close analyserCtxRef — we reuse it across sessions
     barsRef.current = new Array(BARS).fill(0);
@@ -257,12 +262,10 @@ export default function AppPage(): React.JSX.Element {
       }
 
       startTimeRef.current = Date.now();
-      const updateTimer = () => {
+      timerRef.current = window.setInterval(() => {
         if (!wantsMicRef.current) return;
         setElapsed(Date.now() - startTimeRef.current);
-        timerRef.current = requestAnimationFrame(updateTimer);
-      };
-      timerRef.current = requestAnimationFrame(updateTimer);
+      }, 100);
 
       startVisualization(stream);
 

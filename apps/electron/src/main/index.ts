@@ -324,16 +324,39 @@ function showPill(): void {
   }
 }
 
-// -- macOS: Get frontmost app + browser tab context via AppleScript --
-function getMacFrontmostApp(): string | null {
-  try {
-    const { execSync } = require("node:child_process");
-    const appName = execSync(
-      `osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'`,
-      { encoding: "utf-8", timeout: 2000 },
-    ).trim();
+// -- Async helper: run a command without blocking the main thread --
+function execAsync(
+  cmd: string,
+  args: string[],
+  timeoutMs: number,
+): Promise<string> {
+  const { execFile } =
+    require("node:child_process") as typeof import("node:child_process");
+  return new Promise((resolve, reject) => {
+    execFile(
+      cmd,
+      args,
+      { encoding: "utf-8", timeout: timeoutMs },
+      (err, stdout) => {
+        if (err) reject(err);
+        else resolve((stdout as string).trim());
+      },
+    );
+  });
+}
 
-    // For browsers, try to get the active tab URL and title
+// -- macOS: Get frontmost app + browser tab context via AppleScript --
+async function getMacFrontmostApp(): Promise<string | null> {
+  try {
+    const appName = await execAsync(
+      "osascript",
+      [
+        "-e",
+        'tell application "System Events" to get name of first application process whose frontmost is true',
+      ],
+      2000,
+    );
+
     const chromiumBrowsers = [
       "Google Chrome",
       "Arc",
@@ -343,10 +366,14 @@ function getMacFrontmostApp(): string | null {
 
     try {
       if (appName === "Safari") {
-        const result = execSync(
-          `osascript -e 'tell application "Safari" to return {URL of current tab of front window, name of current tab of front window}'`,
-          { encoding: "utf-8", timeout: 2000 },
-        ).trim();
+        const result = await execAsync(
+          "osascript",
+          [
+            "-e",
+            'tell application "Safari" to return {URL of current tab of front window, name of current tab of front window}',
+          ],
+          2000,
+        );
         const idx = result.indexOf(", ");
         if (idx > 0) {
           return JSON.stringify({
@@ -356,16 +383,24 @@ function getMacFrontmostApp(): string | null {
           });
         }
       } else if (appName === "Firefox") {
-        const title = execSync(
-          `osascript -e 'tell application "System Events" to get name of front window of application process "Firefox"'`,
-          { encoding: "utf-8", timeout: 2000 },
-        ).trim();
+        const title = await execAsync(
+          "osascript",
+          [
+            "-e",
+            'tell application "System Events" to get name of front window of application process "Firefox"',
+          ],
+          2000,
+        );
         return JSON.stringify({ app: appName, windowTitle: title });
       } else if (chromiumBrowsers.includes(appName)) {
-        const result = execSync(
-          `osascript -e 'tell application "${appName}" to return {URL of active tab of front window, title of active tab of front window}'`,
-          { encoding: "utf-8", timeout: 2000 },
-        ).trim();
+        const result = await execAsync(
+          "osascript",
+          [
+            "-e",
+            `tell application "${appName}" to return {URL of active tab of front window, title of active tab of front window}`,
+          ],
+          2000,
+        );
         const idx = result.indexOf(", ");
         if (idx > 0) {
           return JSON.stringify({
@@ -386,10 +421,8 @@ function getMacFrontmostApp(): string | null {
 }
 
 // -- Windows: Get foreground window process name + title via PowerShell --
-function getWindowsFrontmostApp(): string | null {
+async function getWindowsFrontmostApp(): Promise<string | null> {
   try {
-    const { execSync } = require("node:child_process");
-    // Get foreground window title and process name
     const script = `
       Add-Type @"
         using System;
@@ -410,10 +443,11 @@ function getWindowsFrontmostApp(): string | null {
       $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
       "$($proc.ProcessName)|$title"
     `;
-    const result = execSync(
-      `powershell -NoProfile -Command "${script.replace(/"/g, '\\"')}"`,
-      { encoding: "utf-8", timeout: 3000 },
-    ).trim();
+    const result = await execAsync(
+      "powershell",
+      ["-NoProfile", "-Command", script],
+      3000,
+    );
 
     const pipeIdx = result.indexOf("|");
     if (pipeIdx > 0) {
@@ -428,25 +462,22 @@ function getWindowsFrontmostApp(): string | null {
 }
 
 // -- Linux (X11): Get active window name + title via xdotool --
-function getLinuxFrontmostApp(): string | null {
+async function getLinuxFrontmostApp(): Promise<string | null> {
   try {
-    const { execSync } = require("node:child_process");
-    const windowTitle = execSync("xdotool getactivewindow getwindowname", {
-      encoding: "utf-8",
-      timeout: 2000,
-    }).trim();
+    const windowTitle = await execAsync(
+      "xdotool",
+      ["getactivewindow", "getwindowname"],
+      2000,
+    );
 
-    // Try to get the process name
     let processName = "";
     try {
-      const pid = execSync("xdotool getactivewindow getwindowpid", {
-        encoding: "utf-8",
-        timeout: 2000,
-      }).trim();
-      processName = execSync(`cat /proc/${pid}/comm`, {
-        encoding: "utf-8",
-        timeout: 1000,
-      }).trim();
+      const pid = await execAsync(
+        "xdotool",
+        ["getactivewindow", "getwindowpid"],
+        2000,
+      );
+      processName = await execAsync("cat", [`/proc/${pid}/comm`], 1000);
     } catch {
       // some windows don't expose PID
     }
@@ -984,13 +1015,13 @@ app.whenReady().then(() => {
   ipcMain.handle("system:frontmost-app", async () => {
     try {
       if (process.platform === "darwin") {
-        return getMacFrontmostApp();
+        return await getMacFrontmostApp();
       }
       if (process.platform === "win32") {
-        return getWindowsFrontmostApp();
+        return await getWindowsFrontmostApp();
       }
       if (process.platform === "linux") {
-        return getLinuxFrontmostApp();
+        return await getLinuxFrontmostApp();
       }
     } catch {
       // graceful fallback
