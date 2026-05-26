@@ -4,6 +4,7 @@ declare global {
   interface Window {
     electron: ElectronAPI;
     api: {
+      debugLog: (msg: string) => void;
       pasteText: (text: string) => Promise<void>;
       updateHotkey: (hotkey: string) => void;
       hidePill: () => void;

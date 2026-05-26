@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 // Custom APIs for renderer
 const api = {
+  debugLog: (msg: string): void => ipcRenderer.send("debug:log", msg),
   pasteText: (text: string): Promise<void> =>
     ipcRenderer.invoke("paste:text", text),
   updateHotkey: (hotkey: string): void =>
