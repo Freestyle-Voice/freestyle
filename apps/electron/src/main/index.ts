@@ -249,13 +249,6 @@ function createAppWindow(): void {
   });
 
   mainWindow.loadURL(getRendererURL("/app"));
-
-  // Show the window at zero opacity so the GPU surface is pre-warmed.
-  // This avoids a visible jitter when showPill() makes it visible.
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.setOpacity(0);
-    mainWindow?.showInactive();
-  });
 }
 
 function createSettingsWindow(): void {
@@ -333,12 +326,11 @@ function showPill(): void {
     return;
   }
 
-  const { x, y } = getAppWindowPosition();
-  mainWindow.setPosition(x, y);
   if (!mainWindow.isVisible()) {
+    const { x, y } = getAppWindowPosition();
+    mainWindow.setPosition(x, y);
     mainWindow.showInactive();
   }
-  mainWindow.setOpacity(1);
 }
 
 // -- Async helper: run a command without blocking the main thread --
@@ -507,8 +499,8 @@ async function getLinuxFrontmostApp(): Promise<string | null> {
 }
 
 function hidePill(): void {
-  if (mainWindow) {
-    mainWindow.setOpacity(0);
+  if (mainWindow?.isVisible()) {
+    mainWindow.hide();
   }
 }
 
