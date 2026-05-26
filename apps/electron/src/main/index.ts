@@ -599,7 +599,7 @@ function createTray(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId("com.freestyle.app");
 
@@ -919,23 +919,23 @@ app.whenReady().then(() => {
   }
 
   // Check if a Freestyle server is already running on the default port.
-  // Run in the background so tray + window creation are not delayed.
-  net
-    .fetch(`http://localhost:${DEFAULT_PORT}/api/health`)
-    .then((res) => (res.ok ? res.json() : null))
-    .then((data: { status?: string; name?: string } | null) => {
-      if (data?.status === "ok" && data?.name === "freestyle") {
-        serverPort = DEFAULT_PORT;
-        console.log(
-          `Reusing existing Freestyle server on http://localhost:${DEFAULT_PORT}`,
-        );
-      } else {
-        startServer(DEFAULT_PORT);
-      }
-    })
-    .catch(() => {
-      startServer(DEFAULT_PORT);
-    });
+  let existingServer = false;
+  try {
+    const res = await net.fetch(`http://localhost:${DEFAULT_PORT}/api/health`);
+    if (res.ok) {
+      const data = (await res.json()) as { status?: string; name?: string };
+      existingServer = data?.status === "ok" && data?.name === "freestyle";
+    }
+  } catch {}
+
+  if (existingServer) {
+    serverPort = DEFAULT_PORT;
+    console.log(
+      `Reusing existing Freestyle server on http://localhost:${DEFAULT_PORT}`,
+    );
+  } else {
+    startServer(DEFAULT_PORT);
+  }
 
   createTray();
 
