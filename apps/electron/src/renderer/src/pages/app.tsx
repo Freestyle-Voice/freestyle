@@ -610,18 +610,14 @@ export default function AppPage(): React.JSX.Element {
                     ? ["#DD6E4E", "#B85C3A"]
                     : state === "transcribing"
                       ? ["#60A5FA", "#3B82F6"]
-                      : state === "initializing"
-                        ? ["#FBBF24", "#F59E0B"]
-                        : ["#8AB62A", "#6B8F12"]
+                      : ["#8AB62A", "#6B8F12"]
                 }
                 agentState={
-                  state === "initializing"
-                    ? "talking"
-                    : state === "recording"
-                      ? "listening"
-                      : state === "transcribing"
-                        ? "talking"
-                        : null
+                  state === "recording" || state === "initializing"
+                    ? "listening"
+                    : state === "transcribing"
+                      ? "talking"
+                      : null
                 }
                 getInputVolume={
                   state === "recording" ? getInputVolume : undefined
@@ -632,13 +628,7 @@ export default function AppPage(): React.JSX.Element {
           )}
 
           {/* Right-side content changes per state */}
-          {state === "initializing" && (
-            <span style={pillTextStyle}>
-              <span className="shimmer-text">Listening...</span>
-            </span>
-          )}
-
-          {state === "recording" && (
+          {(state === "initializing" || state === "recording") && (
             <>
               {partialText ? (
                 <span
