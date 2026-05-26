@@ -134,10 +134,11 @@ export default function AppPage(): React.JSX.Element {
           hidePill();
         },
         onError: (msg) => {
-          // Only tear down if we're actually recording. Connection-time
-          // errors (no API key, no model) fire before any session starts
-          // and must not reset the UI.
-          if (!wantsMicRef.current) return;
+          // Only tear down during an active recording or transcription.
+          // Connection-time errors (no API key, no model, WS close) can
+          // fire during "initializing" or "idle" and must not kill the UI.
+          const s = stateRef.current;
+          if (s !== "recording" && s !== "transcribing") return;
           wantsMicRef.current = false;
           stopVisualization();
           recorderRef.current.cancel();
