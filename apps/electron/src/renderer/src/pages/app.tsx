@@ -254,15 +254,20 @@ export default function AppPage(): React.JSX.Element {
         return;
       }
 
-      playTone("start");
-      setState("recording");
-
+      // User already released the hotkey while mic was initializing —
+      // treat as an aborted press: release the mic and hide the pill
+      // without flashing the recording state or playing a tone.
       if (pendingCommitRef.current) {
         pendingCommitRef.current = false;
-        commitRef.current();
+        recorderRef.current.cancel();
+        recorderRef.current.releaseStream();
+        streamerRef.current?.cancel();
+        hidePill();
         return;
       }
 
+      playTone("start");
+      setState("recording");
       startTimeRef.current = Date.now();
       timerRef.current = window.setInterval(() => {
         if (!wantsMicRef.current) return;
