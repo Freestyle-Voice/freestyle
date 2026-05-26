@@ -165,7 +165,8 @@ function registerAppProtocol(): void {
       decodeURIComponent(url.pathname),
     );
 
-    // If the path has no file extension, serve index.html (SPA fallback)
+    // If the path has no file extension, serve the dashboard SPA fallback.
+    // pill.html is loaded directly by its full path and doesn't need a fallback.
     if (!filePath.match(/\.\w+$/)) {
       filePath = join(__dirname, "../renderer/index.html");
     }
@@ -174,7 +175,14 @@ function registerAppProtocol(): void {
   });
 }
 
-function getRendererURL(path = "/"): string {
+function getPillURL(): string {
+  if (is.dev && process.env.ELECTRON_RENDERER_URL) {
+    return `${process.env.ELECTRON_RENDERER_URL}/pill.html`;
+  }
+  return "app://renderer/pill.html";
+}
+
+function getDashboardURL(path = "/"): string {
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     return `${process.env.ELECTRON_RENDERER_URL}${path}`;
   }
@@ -248,7 +256,7 @@ function createAppWindow(): void {
     return { action: "deny" };
   });
 
-  mainWindow.loadURL(getRendererURL("/app"));
+  mainWindow.loadURL(getPillURL());
 }
 
 function createSettingsWindow(): void {
@@ -316,7 +324,7 @@ function createSettingsWindow(): void {
   }
 
   settingsWindow.loadURL(
-    getRendererURL(onboardingDone ? "/today" : "/onboarding"),
+    getDashboardURL(onboardingDone ? "/today" : "/onboarding"),
   );
 }
 
