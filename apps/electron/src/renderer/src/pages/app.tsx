@@ -114,11 +114,13 @@ export default function AppPage(): React.JSX.Element {
 
   // Re-record state: when the user presses the hotkey during transcription,
   // we start a new recording while the previous transcription finishes in
-  // the background.  The finished text is stored here so it can be combined
-  // with the new transcription.
+  // the background.  `pendingResultsRef` counts how many streaming `final`
+  // messages we still expect before the very last result can be pasted.
+  // When it drops to zero on a `final` arrival, that result is the one to
+  // paste.  The `isReRecording` state drives the stacked-pill visual.
   const [isReRecording, setIsReRecording] = useState(false);
   const previousTextRef = useRef<string | null>(null);
-  const reRecordingRef = useRef(false);
+  const pendingResultsRef = useRef(0);
 
   const recorderRef = useRef(new Recorder());
   const streamerRef = useRef<Streamer | null>(null);
@@ -151,14 +153,16 @@ export default function AppPage(): React.JSX.Element {
         onFinal: async (text) => {
           if (sessionIdRef.current === 0) return;
 
-          // If the user started a re-recording while we were transcribing,
-          // store the text instead of pasting — it will be combined with the
-          // new transcription when that finishes.
-          if (reRecordingRef.current) {
+          // More results expected (a re-record was started) — store the
+          // text so it can be combined with the next transcription.
+          if (pendingResultsRef.current > 1) {
+            pendingResultsRef.current--;
             previousTextRef.current = text.trim() || null;
             return;
           }
 
+          // This is the last expected result — paste and close.
+          pendingResultsRef.current = 0;
           wantsMicRef.current = false;
           sessionIdRef.current = 0;
           stopVisualization();
@@ -171,9 +175,9 @@ export default function AppPage(): React.JSX.Element {
           hidePill();
         },
         onCleaned: (text) => {
-          // If the user is re-recording, update previousText with the
+          // If more results are pending, update previousText with the
           // cleaned version so the final combine uses the best text.
-          if (reRecordingRef.current) {
+          if (pendingResultsRef.current > 0) {
             if (text.trim()) {
               previousTextRef.current = text.trim();
             }
@@ -189,12 +193,15 @@ export default function AppPage(): React.JSX.Element {
         onError: (msg) => {
           if (sessionIdRef.current === 0) return;
 
-          // If re-recording, don't hide — let the recording continue
-          if (reRecordingRef.current) {
+          // If more results are pending (re-recording in progress),
+          // don't hide — let the recording continue.
+          if (pendingResultsRef.current > 1) {
+            pendingResultsRef.current--;
             previousTextRef.current = null;
             return;
           }
 
+          pendingResultsRef.current = 0;
           wantsMicRef.current = false;
           sessionIdRef.current = 0;
           stopVisualization();
@@ -304,7 +311,7 @@ export default function AppPage(): React.JSX.Element {
     setPartialText("");
     setMessage("");
     setIsReRecording(false);
-    reRecordingRef.current = false;
+    pendingResultsRef.current = 0;
     previousTextRef.current = null;
     window.api.hidePill();
   }, []);
@@ -321,10 +328,12 @@ export default function AppPage(): React.JSX.Element {
       setPartialText("");
 
       if (forReRecord) {
-        reRecordingRef.current = true;
+        // The previous commit already set pendingResultsRef to 1;
+        // bump it so onFinal knows to store that result rather than paste.
+        pendingResultsRef.current++;
         setIsReRecording(true);
       } else {
-        reRecordingRef.current = false;
+        pendingResultsRef.current = 0;
         setIsReRecording(false);
         previousTextRef.current = null;
       }
@@ -392,7 +401,7 @@ export default function AppPage(): React.JSX.Element {
       } catch (err) {
         wantsMicRef.current = false;
         pendingCommitRef.current = false;
-        reRecordingRef.current = false;
+        pendingResultsRef.current = 0;
         setIsReRecording(false);
         recorderRef.current.releaseStream();
         setState("error");
@@ -406,8 +415,7 @@ export default function AppPage(): React.JSX.Element {
   // -- Commit: stop recording and transcribe --
   const commitRecording = useCallback(async () => {
     wantsMicRef.current = false;
-    const wasReRecording = reRecordingRef.current;
-    reRecordingRef.current = false;
+    const wasReRecording = isReRecording;
     setIsReRecording(false);
     stopVisualization();
     playTone("stop");
@@ -417,16 +425,28 @@ export default function AppPage(): React.JSX.Element {
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
       streamerRef.current?.cancel();
-      // If this was a re-record that was too short, and we already have
-      // previousText from the first transcription, paste that instead.
-      if (wasReRecording && previousTextRef.current?.trim()) {
-        sessionIdRef.current = 0;
-        const text = previousTextRef.current;
-        previousTextRef.current = null;
-        await window.api.pasteText(text);
-        window.api?.sendTranscriptionDone();
+      if (wasReRecording) {
+        // Short re-record — decrement the pending counter since we
+        // won't be sending a second commit.  If the first result
+        // already arrived, paste it; otherwise let the pending
+        // onFinal handle the paste when it drops to zero.
+        pendingResultsRef.current = Math.max(0, pendingResultsRef.current - 1);
+        if (
+          pendingResultsRef.current === 0 &&
+          previousTextRef.current?.trim()
+        ) {
+          sessionIdRef.current = 0;
+          const text = previousTextRef.current;
+          previousTextRef.current = null;
+          await window.api.pasteText(text);
+          window.api?.sendTranscriptionDone();
+          hidePill();
+        }
+        // If pendingResultsRef > 0 the first result hasn't arrived yet;
+        // onFinal will handle paste when it arrives since pending == 1.
+      } else {
+        hidePill();
       }
-      hidePill();
       return;
     }
 
@@ -435,6 +455,7 @@ export default function AppPage(): React.JSX.Element {
 
     // If streaming mode is active, commit via WebSocket
     if (useStreamingRef.current && streamerRef.current) {
+      pendingResultsRef.current = Math.max(1, pendingResultsRef.current);
       setState("transcribing");
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
@@ -508,7 +529,7 @@ export default function AppPage(): React.JSX.Element {
   const cancelRecording = useCallback(() => {
     wantsMicRef.current = false;
     sessionIdRef.current = 0;
-    reRecordingRef.current = false;
+    pendingResultsRef.current = 0;
     setIsReRecording(false);
     previousTextRef.current = null;
     stopVisualization();
@@ -540,7 +561,6 @@ export default function AppPage(): React.JSX.Element {
       if (s === "idle" || s === "error") {
         startRecording(false);
       } else if (s === "transcribing") {
-        // Re-record: start a new recording while transcription finishes
         startRecording(true);
       }
     });
@@ -551,11 +571,18 @@ export default function AppPage(): React.JSX.Element {
         pendingCommitRef.current = true;
       }
     });
+    const removeCancel = window.api.onPillCancel(() => {
+      const s = stateRef.current;
+      if (s !== "idle") {
+        cancelRecording();
+      }
+    });
     return () => {
       removeDown();
       removeUp();
+      removeCancel();
     };
-  }, [startRecording, commitRecording]);
+  }, [startRecording, commitRecording, cancelRecording]);
 
   // Cleanup on unmount — fully release mic + audio resources.
   // Use a ref to avoid StrictMode double-invoke calling cancelRecording
@@ -664,11 +691,11 @@ export default function AppPage(): React.JSX.Element {
             style={{
               borderRadius: 28,
               position: "absolute",
-              bottom: -6,
-              left: 8,
-              right: 8,
-              opacity: 0.55,
-              transform: "scale(0.95)",
+              bottom: -14,
+              left: 6,
+              right: 6,
+              opacity: 0.5,
+              transform: "scale(0.92)",
               pointerEvents: "none",
               zIndex: 0,
             }}
