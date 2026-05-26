@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/electron/main";
 Sentry.init({
   dsn: "https://b7ed8a9e5051cfe650f0f26ca2482b4b@o4509750817325057.ingest.us.sentry.io/4511454571528192",
   enabled: process.env.NODE_ENV === "production",
+  skipOpenTelemetrySetup: true,
 });
 
 import { execFile, spawnSync } from "node:child_process";
@@ -49,10 +50,16 @@ const APP_BOTTOM_MARGIN = 0;
 // is available (pillPosition, onboardingComplete, autoUpdate).
 // ---------------------------------------------------------------------------
 
+let settingsCache: Record<string, unknown> | null = null;
+
 function readSettings(): Record<string, unknown> {
+  if (settingsCache) return settingsCache;
   try {
     const settingsPath = join(app.getPath("userData"), "settings.json");
-    return JSON.parse(require("node:fs").readFileSync(settingsPath, "utf-8"));
+    settingsCache = JSON.parse(
+      require("node:fs").readFileSync(settingsPath, "utf-8"),
+    );
+    return settingsCache!;
   } catch {
     return {};
   }
@@ -66,6 +73,7 @@ function writeSettings(patch: Record<string, unknown>): void {
       settingsPath,
       JSON.stringify(data, null, 2),
     );
+    settingsCache = data;
   } catch {
     // ignore
   }

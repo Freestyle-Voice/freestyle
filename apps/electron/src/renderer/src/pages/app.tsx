@@ -119,6 +119,7 @@ export default function AppPage(): React.JSX.Element {
         onPartial: (text) => setPartialText(text),
         onFinal: async (text) => {
           recorderRef.current.cancel();
+          recorderRef.current.releaseStream();
           if (text.trim()) {
             await window.api.pasteText(text);
             window.api?.sendTranscriptionDone();
@@ -127,6 +128,7 @@ export default function AppPage(): React.JSX.Element {
         },
         onError: (msg) => {
           recorderRef.current.cancel();
+          recorderRef.current.releaseStream();
           setState("error");
           setMessage(msg);
           setTimeout(() => hidePill(), 2000);
@@ -292,6 +294,7 @@ export default function AppPage(): React.JSX.Element {
     const recordingDuration = Date.now() - startTimeRef.current;
     if (recordingDuration < 1000) {
       recorderRef.current.cancel();
+      recorderRef.current.releaseStream();
       streamerRef.current?.cancel();
       hidePill();
       return;
@@ -301,6 +304,7 @@ export default function AppPage(): React.JSX.Element {
     if (useStreamingRef.current && streamerRef.current) {
       setState("transcribing");
       recorderRef.current.cancel();
+      recorderRef.current.releaseStream();
       streamerRef.current.commit();
       return;
     }
@@ -319,11 +323,13 @@ export default function AppPage(): React.JSX.Element {
       }
 
       if (!wavBlob) {
+        recorderRef.current.releaseStream();
         hidePill();
         return;
       }
 
       recorderRef.current.cancel();
+      recorderRef.current.releaseStream();
 
       const headers: Record<string, string> = {
         "Content-Type": "audio/wav",
@@ -363,6 +369,7 @@ export default function AppPage(): React.JSX.Element {
     stopVisualization();
     streamerRef.current?.cancel();
     recorderRef.current.cancel();
+    recorderRef.current.releaseStream();
     hidePill();
   }, [stopVisualization, hidePill]);
 
