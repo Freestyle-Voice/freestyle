@@ -123,7 +123,7 @@ export default function AppPage(): React.JSX.Element {
           wantsMicRef.current = false;
           stopVisualization();
           recorderRef.current.cancel();
-          recorderRef.current.releaseStream();
+          recorderRef.current.scheduleRelease();
           if (import.meta.env.DEV) {
             console.log("[app] onFinal:", JSON.stringify(text));
           }
@@ -134,10 +134,14 @@ export default function AppPage(): React.JSX.Element {
           hidePill();
         },
         onError: (msg) => {
+          // Only tear down recording state if we're actually recording.
+          // Connection errors (no API key, no model) fire before the
+          // user starts a session and must not reset the UI.
+          if (!wantsMicRef.current) return;
           wantsMicRef.current = false;
           stopVisualization();
           recorderRef.current.cancel();
-          recorderRef.current.releaseStream();
+          recorderRef.current.scheduleRelease();
           setState("error");
           setMessage(msg);
           setTimeout(() => hidePill(), 2000);
@@ -312,7 +316,7 @@ export default function AppPage(): React.JSX.Element {
     } catch (err) {
       wantsMicRef.current = false;
       pendingCommitRef.current = false;
-      recorderRef.current.releaseStream();
+      recorderRef.current.scheduleRelease();
       setState("error");
       setMessage(err instanceof Error ? err.message : "Mic access denied");
       setTimeout(() => hidePill(), 2000);
@@ -328,7 +332,7 @@ export default function AppPage(): React.JSX.Element {
     const recordingDuration = Date.now() - startTimeRef.current;
     if (recordingDuration < 1000) {
       recorderRef.current.cancel();
-      recorderRef.current.releaseStream();
+      recorderRef.current.scheduleRelease();
       streamerRef.current?.cancel();
       hidePill();
       return;
@@ -338,7 +342,7 @@ export default function AppPage(): React.JSX.Element {
     if (useStreamingRef.current && streamerRef.current) {
       setState("transcribing");
       recorderRef.current.cancel();
-      recorderRef.current.releaseStream();
+      recorderRef.current.scheduleRelease();
       streamerRef.current.commit();
       return;
     }
@@ -357,13 +361,13 @@ export default function AppPage(): React.JSX.Element {
       }
 
       if (!wavBlob) {
-        recorderRef.current.releaseStream();
+        recorderRef.current.scheduleRelease();
         hidePill();
         return;
       }
 
       recorderRef.current.cancel();
-      recorderRef.current.releaseStream();
+      recorderRef.current.scheduleRelease();
 
       const headers: Record<string, string> = {
         "Content-Type": "audio/wav",
@@ -406,7 +410,7 @@ export default function AppPage(): React.JSX.Element {
     stopVisualization();
     streamerRef.current?.cancel();
     recorderRef.current.cancel();
-    recorderRef.current.releaseStream();
+    recorderRef.current.scheduleRelease();
     hidePill();
   }, [stopVisualization, hidePill]);
 
