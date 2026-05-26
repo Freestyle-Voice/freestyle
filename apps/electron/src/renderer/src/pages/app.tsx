@@ -104,7 +104,6 @@ export default function AppPage(): React.JSX.Element {
   const wantsMicRef = useRef(false);
   const appContextRef = useRef<string | null>(null);
   const pendingCommitRef = useRef(false);
-  const commitRef = useRef<() => void>(() => {});
 
   const getInputVolume = useCallback(() => volumeRef.current, []);
 
@@ -251,6 +250,7 @@ export default function AppPage(): React.JSX.Element {
 
       if (!wantsMicRef.current) {
         recorderRef.current.cancel();
+        recorderRef.current.releaseStream();
         return;
       }
 
@@ -284,6 +284,8 @@ export default function AppPage(): React.JSX.Element {
       } catch {}
     } catch (err) {
       wantsMicRef.current = false;
+      pendingCommitRef.current = false;
+      recorderRef.current.releaseStream();
       setState("error");
       setMessage(err instanceof Error ? err.message : "Mic access denied");
       setTimeout(() => hidePill(), 2000);
@@ -369,7 +371,6 @@ export default function AppPage(): React.JSX.Element {
       setTimeout(() => hidePill(), 2000);
     }
   }, [stopVisualization, hidePill]);
-  commitRef.current = commitRecording;
 
   const cancelRecording = useCallback(() => {
     wantsMicRef.current = false;

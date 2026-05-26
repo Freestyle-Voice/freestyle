@@ -93,10 +93,7 @@ export async function postProcess(
 
   // If the raw text is purely filler words / punctuation, treat as empty
   const stripped = rawText
-    .replace(
-      /\b(um+|uh+|ah+|er+|hm+|hmm+|mm+|mhm+|like|you know|basically|so|well|yeah|okay|ok|right|i mean)\b/gi,
-      "",
-    )
+    .replace(/\b(um+|uh+|ah+|er+|hm+|hmm+|mm+|mhm+|you know|i mean)\b/gi, "")
     .replace(/[.…,!?\-–—\s]+/g, "");
   if (!stripped) {
     return {

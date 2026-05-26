@@ -61,7 +61,8 @@ function readSettings(): Record<string, unknown> {
     );
     return settingsCache!;
   } catch {
-    return {};
+    settingsCache = {};
+    return settingsCache;
   }
 }
 
@@ -598,7 +599,7 @@ function createTray(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId("com.freestyle.app");
 
@@ -890,21 +891,9 @@ app.whenReady().then(async () => {
   // Set database path for the server before any API calls
   process.env.FREESTYLE_DB_PATH = join(app.getPath("userData"), "freestyle.db");
 
-  // Start the Hono HTTP server with WebSocket support
-  const wss = new WebSocketServer({ noServer: true });
-
-  async function checkExistingServer(port: number): Promise<boolean> {
-    try {
-      const res = await net.fetch(`http://localhost:${port}/api/health`);
-      if (!res.ok) return false;
-      const data = (await res.json()) as { status?: string; name?: string };
-      return data.status === "ok" && data.name === "freestyle";
-    } catch {
-      return false;
-    }
-  }
-
+  // Start the Hono HTTP server with WebSocket support (or reuse an existing one)
   function startServer(port: number): void {
+    const wss = new WebSocketServer({ noServer: true });
     httpServer = serve(
       {
         fetch: server.fetch,
@@ -929,15 +918,24 @@ app.whenReady().then(async () => {
     });
   }
 
-  const existingServer = await checkExistingServer(DEFAULT_PORT);
-  if (existingServer) {
-    serverPort = DEFAULT_PORT;
-    console.log(
-      `Reusing existing Freestyle server on http://localhost:${DEFAULT_PORT}`,
-    );
-  } else {
-    startServer(DEFAULT_PORT);
-  }
+  // Check if a Freestyle server is already running on the default port.
+  // Run in the background so tray + window creation are not delayed.
+  net
+    .fetch(`http://localhost:${DEFAULT_PORT}/api/health`)
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data: { status?: string; name?: string } | null) => {
+      if (data?.status === "ok" && data?.name === "freestyle") {
+        serverPort = DEFAULT_PORT;
+        console.log(
+          `Reusing existing Freestyle server on http://localhost:${DEFAULT_PORT}`,
+        );
+      } else {
+        startServer(DEFAULT_PORT);
+      }
+    })
+    .catch(() => {
+      startServer(DEFAULT_PORT);
+    });
 
   createTray();
 
