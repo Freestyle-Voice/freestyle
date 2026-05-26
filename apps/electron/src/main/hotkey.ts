@@ -145,6 +145,7 @@ export function startHook(): void {
     }
     if (!matchesHotkey(e, config)) return;
     pressed = true;
+    console.log("[hotkey] → onDown fired");
     callbacks.onDown();
   });
 
@@ -155,6 +156,7 @@ export function startHook(): void {
     // Only check keycode for up — modifiers may already be released
     if (e.keycode !== config.keycode) return;
     pressed = false;
+    console.log("[hotkey] → onUp fired");
     callbacks.onUp();
   });
 
