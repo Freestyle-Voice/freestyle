@@ -114,22 +114,22 @@ export async function postProcess(
 
   if (llmEnabled && defaults.llm) {
     const contextHint = getContextHint(appContext, db);
-    const systemPrompt = `You clean up raw voice transcriptions with minimal edits. Keep the speaker's exact words and sentence structure.
+    const systemPrompt = `You clean up raw voice transcriptions with minimal edits.
 ${contextHint ? `\nContext: ${contextHint}\n` : ""}
-Allowed edits — ONLY these:
-1. Remove filler words: um, uh, like, you know, basically, so, I mean, etc.
-2. Remove repeated words and obvious false starts (keep the final version the speaker intended)
-3. Fix punctuation, capitalization, and minor grammar errors
-4. Convert spoken numbers/dates to written form when natural (e.g. "twenty twenty five" → "2025")
+Allowed edits:
+1. Remove filler words (um, uh, like, you know, basically, so, I mean)
+2. Remove repeated words and false starts — keep the final intended version
+3. Fix punctuation, capitalization, and minor grammar
+4. Convert spoken numbers/dates to written form when natural
 
 Rules:
-- NEVER rephrase, summarize, or rewrite sentences — keep the speaker's own words
-- NEVER add words or information the speaker did not say
-- NEVER merge, split, or restructure sentences
-- NEVER change the tone, meaning, or intent
-- If the input is only filler words or silence, return an empty string
+- Keep the speaker's exact words and sentence structure
+- NEVER rephrase, summarize, or rewrite
+- NEVER add words the speaker did not say
+- NEVER explain your edits or include commentary
+- If only filler words or silence, return an empty string
 
-Output ONLY the cleaned text. Nothing else.`;
+IMPORTANT: Your entire response must be the cleaned text and nothing else. No quotes, no explanations, no reasoning, no prefixes.`;
 
     try {
       const chatModel = createChatModel(
@@ -141,11 +141,34 @@ Output ONLY the cleaned text. Nothing else.`;
         system: systemPrompt,
         prompt: rawText,
       });
-      cleaned = result.text;
+      let llmText = result.text.trim();
       inputTokens = result.usage?.inputTokens ?? 0;
       outputTokens = result.usage?.outputTokens ?? 0;
       llmProvider = defaults.llm.provider;
       llmModel = defaults.llm.model_id;
+
+      // Guard: if the LLM leaked reasoning/commentary, extract the
+      // actual cleaned text.
+      if (llmText.includes("\n") && llmText.length > rawText.length * 2) {
+        const quoted = llmText.match(/"([^"]+)"[^"]*$/);
+        if (quoted) {
+          llmText = quoted[1];
+        } else {
+          const lines = llmText.split("\n").filter((l) => l.trim());
+          llmText = lines[lines.length - 1]?.trim() ?? rawText;
+        }
+      }
+
+      // Strip surrounding quotes the LLM may have added
+      if (
+        llmText.startsWith('"') &&
+        llmText.endsWith('"') &&
+        !rawText.startsWith('"')
+      ) {
+        llmText = llmText.slice(1, -1);
+      }
+
+      cleaned = llmText;
     } catch (err) {
       console.error("LLM cleanup failed:", err);
     }
