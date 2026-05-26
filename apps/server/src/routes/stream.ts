@@ -18,6 +18,7 @@ const stream = new Hono().get(
     let sessionStartTime = Date.now();
     let voiceDefaults: { provider: string; model_id: string } | null = null;
     let appContext: string | null = null;
+    let audioDurationMs = 0;
 
     function connectUpstream(ws: {
       send: (data: string) => void;
@@ -98,6 +99,9 @@ const stream = new Hono().get(
             // Send raw text immediately so the client can paste without waiting
             ws.send(JSON.stringify({ type: "final", text: rawText }));
 
+            // Nothing to save or post-process for empty transcriptions
+            if (!rawText) return;
+
             // Run post-processing in the background for history
             postProcess(rawText, appContext)
               .then((pp) => {
@@ -109,8 +113,8 @@ const stream = new Hono().get(
                   const db = getDb();
                   db.prepare(
                     `INSERT INTO transcription_history
-                       (raw_text, cleaned_text, voice_provider, voice_model, llm_provider, llm_model, duration_ms, input_tokens, output_tokens, cost_usd)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                       (raw_text, cleaned_text, voice_provider, voice_model, llm_provider, llm_model, duration_ms, audio_duration_ms, input_tokens, output_tokens, cost_usd)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   ).run(
                     rawText,
                     finalText !== rawText ? finalText : null,
@@ -119,6 +123,7 @@ const stream = new Hono().get(
                     pp.llmProvider,
                     pp.llmModel,
                     durationMs,
+                    audioDurationMs,
                     pp.inputTokens,
                     pp.outputTokens,
                     pp.costUsd,
@@ -133,13 +138,14 @@ const stream = new Hono().get(
                   const db = getDb();
                   db.prepare(
                     `INSERT INTO transcription_history
-                       (raw_text, voice_provider, voice_model, duration_ms)
-                       VALUES (?, ?, ?, ?)`,
+                       (raw_text, voice_provider, voice_model, duration_ms, audio_duration_ms)
+                       VALUES (?, ?, ?, ?, ?)`,
                   ).run(
                     rawText,
                     voiceDefaults!.provider,
                     voiceDefaults!.model_id,
                     durationMs,
+                    audioDurationMs,
                   );
                 } catch {}
               });
@@ -179,7 +185,7 @@ const stream = new Hono().get(
         }
 
         // Text data = JSON command
-        let msg: { type: string; context?: string };
+        let msg: { type: string; context?: string; audioDurationMs?: number };
         try {
           msg = JSON.parse(
             typeof event.data === "string"
@@ -196,6 +202,7 @@ const stream = new Hono().get(
             break;
           case "start":
             sessionStartTime = Date.now();
+            audioDurationMs = 0;
             appContext = null;
             if (!upstream) {
               try {
@@ -204,6 +211,9 @@ const stream = new Hono().get(
             }
             break;
           case "commit":
+            if (msg.audioDurationMs && msg.audioDurationMs > 0) {
+              audioDurationMs = msg.audioDurationMs;
+            }
             upstream?.commit();
             break;
           case "cancel":

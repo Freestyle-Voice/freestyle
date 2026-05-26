@@ -32,6 +32,18 @@ const transcribeRoute = new Hono().post("/", async (c) => {
   // Get context header (JSON with app, url, title)
   const appContext = c.req.header("x-app-context") ?? null;
 
+  // Audio duration: compute from WAV byte length (most accurate), fall back
+  // to the client-supplied header which includes mic-init overhead.
+  let audioDurationMs = 0;
+  if (audioData.length > 44) {
+    // 16kHz 16-bit mono PCM = 32000 bytes/sec → 32 bytes/ms
+    audioDurationMs = Math.round((audioData.length - 44) / 32);
+  }
+  if (!audioDurationMs) {
+    const h = c.req.header("x-audio-duration-ms");
+    if (h) audioDurationMs = Number(h) || 0;
+  }
+
   // Get configured models
   const defaults = getDefaultModels();
   if (!defaults.voice) {
@@ -90,8 +102,8 @@ const transcribeRoute = new Hono().post("/", async (c) => {
   try {
     db.prepare(
       `INSERT INTO transcription_history
-         (raw_text, cleaned_text, voice_provider, voice_model, llm_provider, llm_model, duration_ms, input_tokens, output_tokens, cost_usd)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (raw_text, cleaned_text, voice_provider, voice_model, llm_provider, llm_model, duration_ms, audio_duration_ms, input_tokens, output_tokens, cost_usd)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       rawText,
       pp.cleaned !== rawText ? pp.cleaned : null,
@@ -100,6 +112,7 @@ const transcribeRoute = new Hono().post("/", async (c) => {
       pp.llmProvider,
       pp.llmModel,
       durationMs,
+      audioDurationMs,
       pp.inputTokens,
       pp.outputTokens,
       pp.costUsd,

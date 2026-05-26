@@ -324,6 +324,7 @@ export default function AppPage(): React.JSX.Element {
 
       const headers: Record<string, string> = {
         "Content-Type": "audio/wav",
+        "x-audio-duration-ms": String(recordingDuration),
       };
       if (appContextRef.current)
         headers["x-app-context"] = appContextRef.current;
@@ -399,10 +400,11 @@ export default function AppPage(): React.JSX.Element {
     };
   }, [startRecording, commitRecording]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount — fully release mic + audio resources
   useEffect(() => {
     return () => {
       cancelRecording();
+      recorderRef.current.destroy();
       streamerRef.current?.destroy();
       streamerRef.current = null;
     };
