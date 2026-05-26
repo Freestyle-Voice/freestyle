@@ -480,13 +480,24 @@ export default function AppPage(): React.JSX.Element {
     };
   }, [startRecording, commitRecording]);
 
-  // Cleanup on unmount — fully release mic + audio resources
+  // Cleanup on unmount — fully release mic + audio resources.
+  // Use a ref to avoid StrictMode double-invoke calling cancelRecording
+  // on the simulated unmount (which hides the pill spuriously).
+  const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      cancelRecording();
-      recorderRef.current.destroy();
-      streamerRef.current?.destroy();
-      streamerRef.current = null;
+      mountedRef.current = false;
+      // Delay cleanup slightly so StrictMode's immediate remount
+      // can cancel it before resources are destroyed.
+      setTimeout(() => {
+        if (!mountedRef.current) {
+          cancelRecording();
+          recorderRef.current.destroy();
+          streamerRef.current?.destroy();
+          streamerRef.current = null;
+        }
+      }, 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cancelRecording]);
