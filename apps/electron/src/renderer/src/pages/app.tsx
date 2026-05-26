@@ -114,13 +114,19 @@ export default function AppPage(): React.JSX.Element {
 
   // Re-record state: when the user presses the hotkey during transcription,
   // we start a new recording while the previous transcription finishes in
-  // the background.  `pendingResultsRef` counts how many streaming `final`
-  // messages we still expect before the very last result can be pasted.
-  // When it drops to zero on a `final` arrival, that result is the one to
-  // paste.  The `isReRecording` state drives the stacked-pill visual.
+  // the background.
+  //
+  // `awaitingFirstResultRef` is true when we've committed the second
+  // recording but the first transcription result hasn't arrived yet.
+  // When it's true, onFinal stores the first result AND immediately
+  // sends the deferred second commit with that text as previousText.
+  //
+  // `deferredCommitRef` holds a callback to execute the deferred commit
+  // once the first result arrives.
   const [isReRecording, setIsReRecording] = useState(false);
   const previousTextRef = useRef<string | null>(null);
-  const pendingResultsRef = useRef(0);
+  const awaitingFirstResultRef = useRef(false);
+  const deferredCommitRef = useRef<((prevText: string) => void) | null>(null);
 
   const recorderRef = useRef(new Recorder());
   const streamerRef = useRef<Streamer | null>(null);
@@ -153,16 +159,32 @@ export default function AppPage(): React.JSX.Element {
         onFinal: async (text) => {
           if (sessionIdRef.current === 0) return;
 
-          // More results expected (a re-record was started) — store the
-          // text so it can be combined with the next transcription.
-          if (pendingResultsRef.current > 1) {
-            pendingResultsRef.current--;
+          // If we are awaiting the first result before sending the
+          // deferred second commit, handle it here.
+          if (awaitingFirstResultRef.current) {
+            awaitingFirstResultRef.current = false;
+            const stored = text.trim() || null;
+            previousTextRef.current = stored;
+
+            // Fire the deferred commit now that we have the first text.
+            const deferred = deferredCommitRef.current;
+            deferredCommitRef.current = null;
+            if (deferred && stored) {
+              deferred(stored);
+            } else if (deferred) {
+              deferred("");
+            }
+            return;
+          }
+
+          // If the user is still recording (re-record in progress),
+          // store the text and wait for them to finish.
+          if (wantsMicRef.current) {
             previousTextRef.current = text.trim() || null;
             return;
           }
 
-          // This is the last expected result — paste and close.
-          pendingResultsRef.current = 0;
+          // Normal path — this is the final result; paste and close.
           wantsMicRef.current = false;
           sessionIdRef.current = 0;
           stopVisualization();
@@ -175,9 +197,9 @@ export default function AppPage(): React.JSX.Element {
           hidePill();
         },
         onCleaned: (text) => {
-          // If more results are pending, update previousText with the
-          // cleaned version so the final combine uses the best text.
-          if (pendingResultsRef.current > 0) {
+          // If the user is still recording or we're waiting for the
+          // first result, update previousText with the cleaned version.
+          if (wantsMicRef.current || awaitingFirstResultRef.current) {
             if (text.trim()) {
               previousTextRef.current = text.trim();
             }
@@ -193,17 +215,19 @@ export default function AppPage(): React.JSX.Element {
         onError: (msg) => {
           if (sessionIdRef.current === 0) return;
 
-          // If more results are pending (re-recording in progress),
-          // don't hide — let the recording continue.
-          if (pendingResultsRef.current > 1) {
-            pendingResultsRef.current--;
+          // If the user is still recording, don't hide — let the
+          // recording continue. Clear the stored text since it errored.
+          if (wantsMicRef.current) {
             previousTextRef.current = null;
+            awaitingFirstResultRef.current = false;
+            deferredCommitRef.current = null;
             return;
           }
 
-          pendingResultsRef.current = 0;
           wantsMicRef.current = false;
           sessionIdRef.current = 0;
+          awaitingFirstResultRef.current = false;
+          deferredCommitRef.current = null;
           stopVisualization();
           recorderRef.current.cancel();
           recorderRef.current.releaseStream();
@@ -311,8 +335,10 @@ export default function AppPage(): React.JSX.Element {
     setPartialText("");
     setMessage("");
     setIsReRecording(false);
-    pendingResultsRef.current = 0;
+    sessionIdRef.current = 0;
     previousTextRef.current = null;
+    awaitingFirstResultRef.current = false;
+    deferredCommitRef.current = null;
     window.api.hidePill();
   }, []);
 
@@ -328,14 +354,12 @@ export default function AppPage(): React.JSX.Element {
       setPartialText("");
 
       if (forReRecord) {
-        // The previous commit already set pendingResultsRef to 1;
-        // bump it so onFinal knows to store that result rather than paste.
-        pendingResultsRef.current++;
         setIsReRecording(true);
       } else {
-        pendingResultsRef.current = 0;
         setIsReRecording(false);
         previousTextRef.current = null;
+        awaitingFirstResultRef.current = false;
+        deferredCommitRef.current = null;
       }
 
       window.api
@@ -401,8 +425,9 @@ export default function AppPage(): React.JSX.Element {
       } catch (err) {
         wantsMicRef.current = false;
         pendingCommitRef.current = false;
-        pendingResultsRef.current = 0;
         setIsReRecording(false);
+        awaitingFirstResultRef.current = false;
+        deferredCommitRef.current = null;
         recorderRef.current.releaseStream();
         setState("error");
         setMessage(err instanceof Error ? err.message : "Mic access denied");
@@ -425,28 +450,19 @@ export default function AppPage(): React.JSX.Element {
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
       streamerRef.current?.cancel();
-      if (wasReRecording) {
-        // Short re-record — decrement the pending counter since we
-        // won't be sending a second commit.  If the first result
-        // already arrived, paste it; otherwise let the pending
-        // onFinal handle the paste when it drops to zero.
-        pendingResultsRef.current = Math.max(0, pendingResultsRef.current - 1);
-        if (
-          pendingResultsRef.current === 0 &&
-          previousTextRef.current?.trim()
-        ) {
-          sessionIdRef.current = 0;
-          const text = previousTextRef.current;
-          previousTextRef.current = null;
-          await window.api.pasteText(text);
-          window.api?.sendTranscriptionDone();
-          hidePill();
-        }
-        // If pendingResultsRef > 0 the first result hasn't arrived yet;
-        // onFinal will handle paste when it arrives since pending == 1.
-      } else {
-        hidePill();
+      if (wasReRecording && previousTextRef.current?.trim()) {
+        // Short re-record with first result already available — paste it.
+        sessionIdRef.current = 0;
+        const text = previousTextRef.current;
+        previousTextRef.current = null;
+        awaitingFirstResultRef.current = false;
+        deferredCommitRef.current = null;
+        await window.api.pasteText(text);
+        window.api?.sendTranscriptionDone();
       }
+      // If the first result hasn't arrived yet, onFinal will
+      // see wantsMicRef=false and paste when it does arrive.
+      hidePill();
       return;
     }
 
@@ -455,11 +471,20 @@ export default function AppPage(): React.JSX.Element {
 
     // If streaming mode is active, commit via WebSocket
     if (useStreamingRef.current && streamerRef.current) {
-      pendingResultsRef.current = Math.max(1, pendingResultsRef.current);
       setState("transcribing");
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
-      streamerRef.current.commit(prevText ?? undefined);
+
+      if (wasReRecording && !prevText) {
+        // The first result hasn't arrived yet. Defer the commit
+        // until onFinal delivers it, so the server can combine them.
+        awaitingFirstResultRef.current = true;
+        deferredCommitRef.current = (firstText: string) => {
+          streamerRef.current?.commit(firstText || undefined);
+        };
+      } else {
+        streamerRef.current.commit(prevText ?? undefined);
+      }
       return;
     }
 
@@ -475,7 +500,6 @@ export default function AppPage(): React.JSX.Element {
 
       if (!wavBlob) {
         recorderRef.current.releaseStream();
-        // If we had previous text, paste it
         if (prevText?.trim()) {
           sessionIdRef.current = 0;
           await window.api.pasteText(prevText);
@@ -488,6 +512,9 @@ export default function AppPage(): React.JSX.Element {
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
 
+      // For the REST path, if the first result hasn't arrived yet we
+      // must wait for it.  This is only possible in streaming mode
+      // which already returned above, so prevText is reliable here.
       const headers: Record<string, string> = {
         "Content-Type": "audio/wav",
         "x-audio-duration-ms": String(recordingDuration),
@@ -524,14 +551,15 @@ export default function AppPage(): React.JSX.Element {
       setMessage(err instanceof Error ? err.message : "Transcription failed");
       setTimeout(() => hidePill(), 2000);
     }
-  }, [stopVisualization, hidePill]);
+  }, [stopVisualization, hidePill, isReRecording]);
 
   const cancelRecording = useCallback(() => {
     wantsMicRef.current = false;
     sessionIdRef.current = 0;
-    pendingResultsRef.current = 0;
     setIsReRecording(false);
     previousTextRef.current = null;
+    awaitingFirstResultRef.current = false;
+    deferredCommitRef.current = null;
     stopVisualization();
     streamerRef.current?.cancel();
     recorderRef.current.cancel();
