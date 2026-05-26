@@ -122,9 +122,14 @@ export interface HotkeyCallbacks {
 let started = false;
 let config: HotkeyConfig | null = null;
 let pressed = false;
+let toggleActive = false;
 let callbacks: HotkeyCallbacks | null = null;
 let recordingMode = false;
 let recordingCallback: ((event: UiohookKeyboardEvent) => void) | null = null;
+
+// Keys that fire instant down+up (no sustained hold), requiring toggle mode.
+// Globe/Fn on macOS reports keycode 0 and doesn't generate repeat events.
+const TOGGLE_KEYCODES = new Set<number>([0]);
 
 /** Start the global hook (call once at app startup). */
 export function startHook(): void {
@@ -137,16 +142,22 @@ export function startHook(): void {
     }
     if (!config || !callbacks) return;
     if (pressed) return; // ignore key repeat
-    // Debug: log only keycode-0 events (Globe/Fn)
-    if (e.keycode === 0) {
-      const match = matchesHotkey(e, config);
-      console.log(
-        `[hotkey] keydown code=0 match=${match} pressed=${pressed} alt=${e.altKey}/${config.alt} ctrl=${e.ctrlKey}/${config.ctrl} meta=${e.metaKey}/${config.meta} shift=${e.shiftKey}/${config.shift}`,
-      );
-    }
     if (!matchesHotkey(e, config)) return;
+
+    // Toggle-mode keys (e.g. Globe/Fn): tap to start, tap to stop
+    if (TOGGLE_KEYCODES.has(config.keycode)) {
+      if (!toggleActive) {
+        toggleActive = true;
+        callbacks.onDown();
+      } else {
+        toggleActive = false;
+        callbacks.onUp();
+      }
+      return;
+    }
+
+    // Hold-to-release keys: down = start, up = stop
     pressed = true;
-    console.log("[hotkey] → onDown fired");
     callbacks.onDown();
   });
 
@@ -157,7 +168,6 @@ export function startHook(): void {
     // Only check keycode for up — modifiers may already be released
     if (e.keycode !== config.keycode) return;
     pressed = false;
-    console.log("[hotkey] → onUp fired");
     callbacks.onUp();
   });
 
@@ -180,6 +190,7 @@ export function registerHotkey(
   cbs: HotkeyCallbacks,
 ): void {
   callbacks = cbs;
+  toggleActive = false;
   pressed = false;
   const resolved = accel && isValidAccelerator(accel) ? accel : DEFAULT_HOTKEY;
   config = parseAccelerator(resolved);
