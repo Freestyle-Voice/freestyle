@@ -939,7 +939,11 @@ app.whenReady().then(() => {
   });
 
   // Pre-warm the native audio device for fast capture start
-  audioCapture.openStream();
+  try {
+    audioCapture.openStream();
+  } catch (err) {
+    console.error("[audio] Failed to pre-warm audio device:", err);
+  }
 
   // Start the global keyboard hook (uiohook-napi) and register the hotkey
   startHook();
