@@ -32,9 +32,6 @@ importers:
       '@electron-toolkit/utils':
         specifier: ^4.0.0
         version: 4.0.0(electron@39.8.10)
-      '@freestyle/logger':
-        specifier: workspace:*
-        version: link:../../packages/logger
       '@freestyle/server':
         specifier: workspace:*
         version: link:../server
@@ -177,9 +174,6 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.65
         version: 3.0.65(zod@4.4.3)
-      '@freestyle/logger':
-        specifier: workspace:*
-        version: link:../../packages/logger
       '@freestyle/validations':
         specifier: workspace:*
         version: link:../../packages/validations
