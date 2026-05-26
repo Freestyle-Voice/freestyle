@@ -106,10 +106,10 @@ function isValidAccelerator(accel: string): boolean {
 function matchesHotkey(e: UiohookKeyboardEvent, cfg: HotkeyConfig): boolean {
   if (cfg.keycode < 0) return false;
   if (e.keycode !== cfg.keycode) return false;
-  if (cfg.alt !== e.altKey) return false;
-  if (cfg.ctrl !== e.ctrlKey) return false;
-  if (cfg.meta !== e.metaKey) return false;
-  if (cfg.shift !== e.shiftKey) return false;
+  if (cfg.alt !== !!e.altKey) return false;
+  if (cfg.ctrl !== !!e.ctrlKey) return false;
+  if (cfg.meta !== !!e.metaKey) return false;
+  if (cfg.shift !== !!e.shiftKey) return false;
   return true;
 }
 
@@ -137,10 +137,11 @@ export function startHook(): void {
     }
     if (!config || !callbacks) return;
     if (pressed) return; // ignore key repeat
-    // Debug: log events near the configured keycode
-    if (config.keycode <= 0 || e.keycode === config.keycode) {
+    // Debug: log only keycode-0 events (Globe/Fn)
+    if (e.keycode === 0) {
+      const match = matchesHotkey(e, config);
       console.log(
-        `[hotkey] keydown code=${e.keycode} cfg=${config.keycode} alt=${e.altKey}/${config.alt} ctrl=${e.ctrlKey}/${config.ctrl} meta=${e.metaKey}/${config.meta} shift=${e.shiftKey}/${config.shift}`,
+        `[hotkey] keydown code=0 match=${match} pressed=${pressed} alt=${e.altKey}/${config.alt} ctrl=${e.ctrlKey}/${config.ctrl} meta=${e.metaKey}/${config.meta} shift=${e.shiftKey}/${config.shift}`,
       );
     }
     if (!matchesHotkey(e, config)) return;
