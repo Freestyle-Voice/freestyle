@@ -26,6 +26,7 @@ export class OpenAITranscriptionProvider implements TranscriptionProvider {
 
   openStreamingSession(opts: StreamingSessionOptions): StreamSession {
     const { apiKey, model, prompt, callbacks } = opts;
+    const short = stripProviderPrefix(model);
     let partialText = "";
     let configured = false;
 
@@ -37,7 +38,7 @@ export class OpenAITranscriptionProvider implements TranscriptionProvider {
     });
 
     ws.on("open", () => {
-      const transcription: Record<string, unknown> = { model };
+      const transcription: Record<string, unknown> = { model: short };
       if (prompt) transcription.prompt = prompt;
 
       ws.send(
@@ -66,7 +67,7 @@ export class OpenAITranscriptionProvider implements TranscriptionProvider {
         case "session.updated":
           if (!configured) {
             configured = true;
-            callbacks.onReady(model);
+            callbacks.onReady(short);
           }
           return;
         case "conversation.item.input_audio_transcription.delta": {
