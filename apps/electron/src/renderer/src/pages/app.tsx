@@ -144,85 +144,119 @@ export default function AppPage(): React.JSX.Element {
   const getInputVolume = useCallback(() => volumeRef.current, []);
 
   // ---- Queue drain ----
+  // Called after each commit.  Waits until the user stops recording
+  // (wantsMicRef is false), then resolves all queued promises,
+  // stitches results, post-processes if needed, and pastes.
   const drainQueue = useCallback(async () => {
     if (drainingRef.current) return;
     drainingRef.current = true;
 
-    // Keep draining as long as there are entries.  New entries may be
-    // pushed while we're awaiting, so re-check after each batch.
-    while (queueRef.current.length > 0 && !cancelledRef.current) {
-      // Snapshot the current queue and clear it so new recordings
-      // can push fresh entries while we await.
-      const batch = [...queueRef.current];
-      queueRef.current = [];
+    // Wait until the user finishes recording.  Each commitRecording
+    // calls drainQueue again after pushing, so if we're already
+    // draining we just return (the loop will pick up new entries).
+    while (wantsMicRef.current && !cancelledRef.current) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
 
-      dbg(`[drainQueue] waiting for ${batch.length} result(s)`);
-      const results = await Promise.all(batch.map((e) => e.promise));
+    if (cancelledRef.current || queueRef.current.length === 0) {
+      drainingRef.current = false;
+      return;
+    }
 
-      if (cancelledRef.current) break;
+    // Take everything in the queue.
+    const batch = [...queueRef.current];
+    queueRef.current = [];
 
-      // If more entries arrived while we were awaiting, loop again
-      // to include them in the final stitch.
-      if (queueRef.current.length > 0) {
-        // Put the resolved results back as immediately-resolved entries
-        // so the next iteration can combine everything.
-        const resolved = results
-          .filter((t) => t.trim())
-          .map((t) => ({ promise: Promise.resolve(t) }));
-        queueRef.current = [...resolved, ...queueRef.current];
-        continue;
-      }
+    dbg(`[drainQueue] waiting for ${batch.length} result(s)`);
+    const results = await Promise.all(batch.map((e) => e.promise));
 
-      // All results are in.  Stitch and paste.
-      const nonEmpty = results.filter((t) => t.trim());
-      if (nonEmpty.length === 0 || cancelledRef.current) break;
+    if (cancelledRef.current) {
+      drainingRef.current = false;
+      return;
+    }
 
-      let finalText: string;
-      if (nonEmpty.length === 1) {
-        finalText = nonEmpty[0];
-      } else {
-        // Multiple recordings — stitch and re-post-process.
-        const combined = nonEmpty.join(" ");
-        dbg(
-          `[drainQueue] stitching ${nonEmpty.length} results, calling /api/post-process`,
-        );
-        try {
-          const res = await fetch(`${getApiBase()}/api/post-process`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              text: combined,
-              appContext: appContextRef.current,
-            }),
-          });
-          if (cancelledRef.current) break;
-          if (res.ok) {
-            const data = await res.json();
-            finalText = data.cleaned || combined;
-          } else {
-            finalText = combined;
-          }
-        } catch {
+    // If the user started recording again while we were awaiting,
+    // put results back and loop.
+    if (wantsMicRef.current || queueRef.current.length > 0) {
+      const resolved = results
+        .filter((t) => t.trim())
+        .map((t) => ({ promise: Promise.resolve(t) }));
+      queueRef.current = [...resolved, ...queueRef.current];
+      drainingRef.current = false;
+      // The next commitRecording will call drainQueue again.
+      return;
+    }
+
+    // All results are in and user is not recording.  Stitch and paste.
+    const nonEmpty = results.filter((t) => t.trim());
+    if (nonEmpty.length === 0) {
+      drainingRef.current = false;
+      hidePill();
+      return;
+    }
+
+    let finalText: string;
+    if (nonEmpty.length === 1) {
+      finalText = nonEmpty[0];
+    } else {
+      const combined = nonEmpty.join(" ");
+      dbg(
+        `[drainQueue] stitching ${nonEmpty.length} results via /api/post-process`,
+      );
+      try {
+        const res = await fetch(`${getApiBase()}/api/post-process`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: combined,
+            appContext: appContextRef.current,
+          }),
+        });
+        if (cancelledRef.current) {
+          drainingRef.current = false;
+          return;
+        }
+        if (res.ok) {
+          const data = await res.json();
+          finalText = data.cleaned || combined;
+        } else {
           finalText = combined;
         }
+      } catch {
+        finalText = combined;
       }
-
-      if (cancelledRef.current) break;
-
-      dbg(`[drainQueue] pasting final text (${finalText.length} chars)`);
-      await window.api.pasteText(finalText);
-      window.api?.sendTranscriptionDone();
     }
+
+    if (cancelledRef.current) {
+      drainingRef.current = false;
+      return;
+    }
+
+    // If the user started ANOTHER recording while we were post-
+    // processing, stash the result and let the next drain combine it.
+    if (wantsMicRef.current || queueRef.current.length > 0) {
+      queueRef.current = [
+        { promise: Promise.resolve(finalText) },
+        ...queueRef.current,
+      ];
+      drainingRef.current = false;
+      return;
+    }
+
+    dbg(`[drainQueue] pasting (${finalText.length} chars)`);
+    await window.api.pasteText(finalText);
+    window.api?.sendTranscriptionDone();
 
     drainingRef.current = false;
 
-    // If not cancelled and no new entries arrived, we're done — hide.
-    if (!cancelledRef.current && queueRef.current.length === 0) {
-      // Only hide if the user isn't currently recording another segment
-      if (!wantsMicRef.current) {
-        dbg("[drainQueue] done, hiding pill");
-        hidePill();
-      }
+    // Final check: if user started recording during paste, don't hide.
+    if (
+      !wantsMicRef.current &&
+      queueRef.current.length === 0 &&
+      !cancelledRef.current
+    ) {
+      dbg("[drainQueue] done, hiding pill");
+      hidePill();
     }
   }, []);
 
