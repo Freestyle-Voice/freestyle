@@ -10,22 +10,14 @@ const FALL = 0.22;
 const SVG_WIDTH = 140;
 const SVG_HEIGHT = 28;
 
-const pillTextStyle: React.CSSProperties = {
-  color: "var(--muted-foreground)",
-  fontSize: 13,
-  flex: 1,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  paddingRight: 8,
-};
-
 type PillState =
   | "idle"
   | "initializing"
   | "recording"
   | "transcribing"
   | "error";
+
+type BarMode = "connecting" | "listening" | "speaking";
 
 // ---------------------------------------------------------------------------
 // Sound
@@ -94,6 +86,16 @@ const pillInnerStyle: React.CSSProperties = {
   WebkitAppRegion: "no-drag",
 } as React.CSSProperties;
 
+const pillTextStyle: React.CSSProperties = {
+  color: "var(--muted-foreground)",
+  fontSize: 13,
+  flex: 1,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  paddingRight: 8,
+};
+
 interface TranscribeResult {
   raw: string;
   cleaned: string;
@@ -107,13 +109,11 @@ export default function AppPage(): React.JSX.Element {
   const [state, setState] = useState<PillState>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [message, setMessage] = useState("");
-  const [partialText, setPartialText] = useState("");
   const useStreamingRef = useRef(false);
 
   const [isReRecording, setIsReRecording] = useState(false);
   const isReRecordingRef = useRef(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const [pillLabel, setPillLabel] = useState("Transcribing...");
 
   const recorderRef = useRef(new Recorder());
   const streamerRef = useRef<Streamer | null>(null);
@@ -130,20 +130,19 @@ export default function AppPage(): React.JSX.Element {
   const appContextRef = useRef<string | null>(null);
   const pendingCommitRef = useRef(false);
   const pillActiveRef = useRef(false);
+  const barModeRef = useRef<BarMode | null>(null);
+  const scanIndexRef = useRef(0);
+  const scanTickRef = useRef(0);
+  const speakingStartRef = useRef(0);
+  const lastIpcTimeRef = useRef(0);
+  const freqDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
-  // ---- Transcription queue ----
-  // Each commitRecording pushes a QueueEntry.  The drainQueue function
-  // waits for all entries, stitches the results, post-processes if
-  // needed, then pastes.  No session-id coordination required.
   const queueRef = useRef<QueueEntry[]>([]);
   const drainingRef = useRef(false);
 
   const getInputVolume = useCallback(() => volumeRef.current, []);
 
   // ---- Queue drain ----
-  // Called after each commit.  Waits until the user stops recording
-  // (wantsMicRef is false), then resolves all queued promises,
-  // stitches results, post-processes if needed, and pastes.
   const drainQueue = useCallback(async () => {
     if (drainingRef.current) return;
     drainingRef.current = true;
@@ -167,8 +166,6 @@ export default function AppPage(): React.JSX.Element {
       return;
     }
 
-    // If the user started recording again while we were awaiting,
-    // stash results and exit — next commitRecording will re-drain.
     if (wantsMicRef.current || queueRef.current.length > 0) {
       const resolved = results
         .filter((r) => r.raw.trim())
@@ -188,12 +185,9 @@ export default function AppPage(): React.JSX.Element {
     let finalText: string;
 
     if (nonEmpty.length === 1) {
-      // Single recording — use the already-post-processed cleaned text.
       finalText = nonEmpty[0].cleaned.trim() || nonEmpty[0].raw.trim();
     } else {
-      // Multiple recordings — stitch raw texts and post-process together.
       const combined = nonEmpty.map((r) => r.raw).join(" ");
-      setPillLabel("Processing...");
       try {
         const res = await fetch(`${getApiBase()}/api/post-process`, {
           method: "POST",
@@ -255,17 +249,9 @@ export default function AppPage(): React.JSX.Element {
           useStreamingRef.current = config.streaming;
         },
         onReady: () => {},
-        onPartial: (text) => setPartialText(text),
-        onFinal: async (_text) => {
-          // Streaming onFinal is not used in the queue model for the
-          // REST path.  For streaming mode it would need to resolve a
-          // promise — but the current user is on REST, so this is a
-          // no-op safety net.  The queue handles everything.
-        },
-        onCleaned: (_text) => {
-          // Cleaned results are handled by the transcribe endpoint
-          // response directly.  No action needed here.
-        },
+        onPartial: () => {},
+        onFinal: async () => {},
+        onCleaned: () => {},
         onError: (msg) => {
           if (!pillActiveRef.current) return;
           if (wantsMicRef.current) return;
@@ -278,70 +264,130 @@ export default function AppPage(): React.JSX.Element {
     return streamerRef.current;
   }, []);
 
-  // ---- Visualization ----
-  const startVisualization = useCallback((stream: MediaStream) => {
-    if (!analyserCtxRef.current || analyserCtxRef.current.state === "closed") {
-      analyserCtxRef.current = new AudioContext();
+  // ---- Bar animation loop ----
+  const applyBarsToSvg = useCallback(() => {
+    const svg = barsSvgRef.current;
+    if (!svg) return;
+    const lines = svg.querySelectorAll("line");
+    for (let i = 0; i < lines.length; i++) {
+      const val = barsRef.current[i] ?? 0;
+      const h = Math.max(2, val * SVG_HEIGHT * 1.25);
+      lines[i].setAttribute("y1", String((SVG_HEIGHT + h) / 2));
+      lines[i].setAttribute("y2", String((SVG_HEIGHT - h) / 2));
+      lines[i].style.opacity = String(0.5 + val * 0.5);
     }
-    const ctx = analyserCtxRef.current;
-    try {
-      audioSourceRef.current?.disconnect();
-    } catch {}
-    try {
-      analyserNodeRef.current?.disconnect();
-    } catch {}
+  }, []);
 
-    const source = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.4;
-    source.connect(analyser);
-    audioSourceRef.current = source;
-    analyserNodeRef.current = analyser;
+  const runBars = useCallback(() => {
+    const mode = barModeRef.current;
+    if (!mode) return;
 
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    const sliceSize = Math.floor(analyser.frequencyBinCount / BARS);
-    let lastIpcTime = 0;
-
-    const update = () => {
-      if (!wantsMicRef.current) return;
-      analyser.getByteFrequencyData(dataArray);
+    if (mode === "connecting") {
+      const now = performance.now();
+      if (now - scanTickRef.current >= 150) {
+        scanTickRef.current = now;
+        scanIndexRef.current = (scanIndexRef.current + 1) % BARS;
+      }
       const raw: number[] = [];
-      let totalSum = 0;
       for (let i = 0; i < BARS; i++) {
-        let sum = 0;
-        for (let j = 0; j < sliceSize; j++) sum += dataArray[i * sliceSize + j];
-        const val = sum / sliceSize / 255;
-        raw.push(val);
-        totalSum += val;
+        const distA = Math.abs(i - scanIndexRef.current);
+        const distB = Math.abs(i - (BARS - 1 - scanIndexRef.current));
+        const dist = Math.min(distA, distB);
+        raw.push(dist === 0 ? 0.7 : dist === 1 ? 0.3 : 0.05);
       }
       barsRef.current = smoothBars(barsRef.current, raw);
-      const volume = Math.min(1, (totalSum / BARS) * 2.5);
-      volumeRef.current = volume;
-      const now = performance.now();
-      if (now - lastIpcTime >= 100) {
-        lastIpcTime = now;
-        window.api?.sendAudioLevel(volume);
-      }
-      const svg = barsSvgRef.current;
-      if (svg) {
-        const lines = svg.querySelectorAll("line");
-        for (let i = 0; i < lines.length; i++) {
-          const val = barsRef.current[i] ?? 0;
-          const h = Math.max(2, val * SVG_HEIGHT * 1.25);
-          lines[i].setAttribute("y1", String((SVG_HEIGHT + h) / 2));
-          lines[i].setAttribute("y2", String((SVG_HEIGHT - h) / 2));
-          lines[i].style.opacity = String(0.5 + val * 0.5);
+      volumeRef.current = 0.15;
+    } else if (mode === "listening") {
+      const analyser = analyserNodeRef.current;
+      const dataArray = freqDataRef.current;
+      if (analyser && dataArray) {
+        analyser.getByteFrequencyData(dataArray);
+        const sliceSize = Math.floor(analyser.frequencyBinCount / BARS);
+        const raw: number[] = [];
+        let totalSum = 0;
+        for (let i = 0; i < BARS; i++) {
+          let sum = 0;
+          for (let j = 0; j < sliceSize; j++)
+            sum += dataArray[i * sliceSize + j];
+          const val = sum / sliceSize / 255;
+          raw.push(val);
+          totalSum += val;
+        }
+        barsRef.current = smoothBars(barsRef.current, raw);
+        const volume = Math.min(1, (totalSum / BARS) * 2.5);
+        volumeRef.current = volume;
+        const now = performance.now();
+        if (now - lastIpcTimeRef.current >= 100) {
+          lastIpcTimeRef.current = now;
+          window.api?.sendAudioLevel(volume);
         }
       }
-      rafRef.current = requestAnimationFrame(update);
-    };
-    rafRef.current = requestAnimationFrame(update);
-  }, []);
+    } else if (mode === "speaking") {
+      const time = (performance.now() - speakingStartRef.current) / 1000;
+      const raw: number[] = [];
+      for (let i = 0; i < BARS; i++) {
+        const wave = Math.sin(time * 2 + i * 0.5) * 0.3 + 0.5;
+        const noise = Math.sin(time * 7.3 + i * 2.1) * 0.1;
+        raw.push(Math.max(0.1, Math.min(1, wave + noise)));
+      }
+      barsRef.current = smoothBars(barsRef.current, raw);
+      volumeRef.current = 0.4;
+    }
+
+    applyBarsToSvg();
+    rafRef.current = requestAnimationFrame(runBars);
+  }, [applyBarsToSvg]);
+
+  // ---- Visualization control ----
+  const startBarAnimation = useCallback(
+    (mode: BarMode) => {
+      cancelAnimationFrame(rafRef.current);
+      barModeRef.current = mode;
+      if (mode === "connecting") {
+        scanIndexRef.current = 0;
+        scanTickRef.current = performance.now();
+      } else if (mode === "speaking") {
+        speakingStartRef.current = performance.now();
+      }
+      rafRef.current = requestAnimationFrame(runBars);
+    },
+    [runBars],
+  );
+
+  const startListening = useCallback(
+    (stream: MediaStream) => {
+      if (
+        !analyserCtxRef.current ||
+        analyserCtxRef.current.state === "closed"
+      ) {
+        analyserCtxRef.current = new AudioContext();
+      }
+      const ctx = analyserCtxRef.current;
+      try {
+        audioSourceRef.current?.disconnect();
+      } catch {}
+      try {
+        analyserNodeRef.current?.disconnect();
+      } catch {}
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.4;
+      source.connect(analyser);
+      audioSourceRef.current = source;
+      analyserNodeRef.current = analyser;
+      freqDataRef.current = new Uint8Array(analyser.frequencyBinCount);
+
+      startBarAnimation("listening");
+    },
+    [startBarAnimation],
+  );
 
   const stopVisualization = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
     rafRef.current = 0;
+    barModeRef.current = null;
     clearInterval(timerRef.current);
     timerRef.current = 0;
     try {
@@ -352,6 +398,7 @@ export default function AppPage(): React.JSX.Element {
     } catch {}
     audioSourceRef.current = null;
     analyserNodeRef.current = null;
+    freqDataRef.current = null;
     barsRef.current = new Array(BARS).fill(0);
     volumeRef.current = 0;
     setElapsed(0);
@@ -360,18 +407,17 @@ export default function AppPage(): React.JSX.Element {
   // ---- Hide pill ----
   const hidePill = useCallback(() => {
     setState("idle");
-    setPartialText("");
     setMessage("");
     setIsReRecording(false);
     isReRecordingRef.current = false;
     setPendingCount(0);
-    setPillLabel("Transcribing...");
     wantsMicRef.current = false;
     pillActiveRef.current = false;
     queueRef.current = [];
     drainingRef.current = false;
+    stopVisualization();
     window.api.hidePill();
-  }, []);
+  }, [stopVisualization]);
 
   // ---- Start recording ----
   const startRecording = useCallback(
@@ -383,8 +429,6 @@ export default function AppPage(): React.JSX.Element {
       pillActiveRef.current = true;
       pendingCommitRef.current = false;
       setMessage("");
-      setPartialText("");
-      setPillLabel("Transcribing...");
 
       if (forReRecord) {
         isReRecordingRef.current = true;
@@ -408,7 +452,10 @@ export default function AppPage(): React.JSX.Element {
           appContextRef.current = null;
         });
 
-      if (!forReRecord) setState("initializing");
+      if (!forReRecord) {
+        setState("initializing");
+        startBarAnimation("connecting");
+      }
 
       try {
         const stream = useStreamingRef.current
@@ -437,7 +484,7 @@ export default function AppPage(): React.JSX.Element {
           setElapsed(Date.now() - startTimeRef.current);
         }, 100);
 
-        startVisualization(stream);
+        startListening(stream);
         try {
           await getStreamer().startCapture(
             stream,
@@ -450,43 +497,57 @@ export default function AppPage(): React.JSX.Element {
         isReRecordingRef.current = false;
         setIsReRecording(false);
         recorderRef.current.releaseStream();
+        stopVisualization();
         setState("error");
         setMessage(err instanceof Error ? err.message : "Mic access denied");
         setTimeout(() => hidePill(), 2000);
       }
     },
-    [startVisualization, hidePill, getStreamer],
+    [
+      startBarAnimation,
+      startListening,
+      stopVisualization,
+      hidePill,
+      getStreamer,
+    ],
   );
 
   // ---- Commit recording ----
-  // Fires a transcription request and pushes the result promise into the
-  // queue.  Does NOT paste or hide — the queue drain handles that.
   const commitRecording = useCallback(async () => {
     wantsMicRef.current = false;
     isReRecordingRef.current = false;
     setIsReRecording(false);
-    stopVisualization();
     playTone("stop");
+
+    // Tear down mic analyser but keep rAF alive
+    clearInterval(timerRef.current);
+    timerRef.current = 0;
+    try {
+      audioSourceRef.current?.disconnect();
+    } catch {}
+    try {
+      analyserNodeRef.current?.disconnect();
+    } catch {}
+    audioSourceRef.current = null;
+    analyserNodeRef.current = null;
 
     const recordingDuration = Date.now() - startTimeRef.current;
     if (recordingDuration < 1000) {
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
       streamerRef.current?.cancel();
-      // Only hide if nothing else is in-flight (no queue entries and
-      // no active drain processing previous results).
       if (queueRef.current.length === 0 && !drainingRef.current) {
         hidePill();
       } else {
-        // Go back to transcribing — the drain will handle paste/hide.
         setState("transcribing");
+        startBarAnimation("speaking");
       }
       return;
     }
 
     setState("transcribing");
+    startBarAnimation("speaking");
 
-    // Get the audio blob
     let wavBlob: Blob | null = streamerRef.current?.getWavBlob() ?? null;
     if (!wavBlob && recorderRef.current.isRecording()) {
       wavBlob = await recorderRef.current.stop();
@@ -494,7 +555,6 @@ export default function AppPage(): React.JSX.Element {
     recorderRef.current.cancel();
     recorderRef.current.releaseStream();
 
-    // If cancel/hide fired while we were getting the blob, bail out.
     if (!pillActiveRef.current) {
       return;
     }
@@ -504,8 +564,6 @@ export default function AppPage(): React.JSX.Element {
       return;
     }
 
-    // Skip post-processing on subsequent recordings — the raw texts
-    // will be stitched and post-processed together in drainQueue.
     const isSubsequent = queueRef.current.length > 0 || drainingRef.current;
     const headers: Record<string, string> = {
       "Content-Type": "audio/wav",
@@ -530,12 +588,9 @@ export default function AppPage(): React.JSX.Element {
       })
       .catch(() => empty);
 
-    // Push to queue
     queueRef.current.push({ promise: transcribePromise });
-
-    // Start draining if not already draining
     drainQueue();
-  }, [stopVisualization, hidePill, drainQueue]);
+  }, [hidePill, drainQueue, startBarAnimation]);
 
   // ---- Cancel ----
   const cancelRecording = useCallback(() => {
@@ -614,7 +669,6 @@ export default function AppPage(): React.JSX.Element {
   const gap = SVG_WIDTH / BARS;
   const barWidth = Math.min(gap * 0.55, 5);
 
-  // Flare only on the topmost pill.
   const topGlow =
     state === "initializing"
       ? "glow-initializing"
@@ -626,13 +680,46 @@ export default function AppPage(): React.JSX.Element {
             ? "glow-error"
             : "glow-idle";
 
-  // Right-side badge: timer during recording, xN during transcribing.
   const badge =
     state === "recording"
       ? formatTimer(elapsed)
       : state === "transcribing" && pendingCount > 0
         ? `x${pendingCount}`
         : null;
+
+  const showBars =
+    state === "initializing" ||
+    state === "recording" ||
+    state === "transcribing";
+
+  const renderBars = (ref?: React.RefObject<SVGSVGElement | null>) => (
+    <svg
+      ref={ref}
+      width={SVG_WIDTH}
+      height={SVG_HEIGHT}
+      viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+      style={{ display: "block", flex: 1 }}
+      role="img"
+      aria-label="Audio levels"
+    >
+      {Array.from({ length: BARS }, (_, i) => {
+        const x = gap * (i + 0.5);
+        return (
+          <line
+            key={i}
+            x1={x}
+            y1={SVG_HEIGHT / 2 + 1}
+            x2={x}
+            y2={SVG_HEIGHT / 2 - 1}
+            stroke="var(--muted-foreground)"
+            strokeWidth={barWidth}
+            strokeLinecap="round"
+            style={{ opacity: 0.5 }}
+          />
+        );
+      })}
+    </svg>
+  );
 
   return (
     <div
@@ -662,19 +749,6 @@ export default function AppPage(): React.JSX.Element {
           .glow-transcribing { animation: glow-pulse-blue 1.5s ease-in-out infinite; }
           .glow-error { animation: glow-pulse-red 1.5s ease-in-out infinite; }
           .glow-idle { box-shadow: 0 0 6px 2px rgba(0,0,0,0.05); transition: box-shadow 300ms ease; }
-          @keyframes shimmer {
-            0% { background-position: 100% center; }
-            100% { background-position: 0% center; }
-          }
-          .shimmer-text {
-            font-style: italic;
-            background: linear-gradient(90deg, var(--muted-foreground) calc(50% - 40px), var(--foreground), var(--muted-foreground) calc(50% + 40px));
-            background-size: 250% 100%;
-            background-clip: text;
-            -webkit-background-clip: text;
-            color: transparent;
-            animation: shimmer 2s linear infinite;
-          }
           @keyframes fade-in {
             from { opacity: 0; }
             to { opacity: 1; }
@@ -684,8 +758,6 @@ export default function AppPage(): React.JSX.Element {
       </style>
 
       <div style={{ position: "relative" }}>
-        {/* Background stacked pill — visible during re-record.
-            No flare, slightly scaled down for depth effect. */}
         {isReRecording && (
           <div
             style={{
@@ -719,9 +791,7 @@ export default function AppPage(): React.JSX.Element {
                   className="h-full w-full"
                 />
               </div>
-              <span style={pillTextStyle}>
-                <span className="shimmer-text">Transcribing...</span>
-              </span>
+              {renderBars()}
               {pendingCount > 0 && (
                 <span
                   className="mono"
@@ -741,7 +811,6 @@ export default function AppPage(): React.JSX.Element {
           </div>
         )}
 
-        {/* Primary (topmost) pill — gets the flare */}
         <div
           className={`${topGlow}${isReRecording ? " pill-fade-in" : ""}`}
           style={{
@@ -792,75 +861,12 @@ export default function AppPage(): React.JSX.Element {
               </div>
             )}
 
-            {state === "initializing" && (
-              <span style={pillTextStyle}>
-                <span className="shimmer-text">Listening...</span>
-              </span>
-            )}
-
-            {state === "recording" && (
-              <>
-                {partialText ? (
-                  <span
-                    style={{
-                      flex: 1,
-                      fontSize: 12,
-                      color: "var(--foreground)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      direction: "rtl",
-                      textAlign: "left",
-                    }}
-                  >
-                    {partialText}
-                  </span>
-                ) : (
-                  <svg
-                    ref={barsSvgRef}
-                    width={SVG_WIDTH}
-                    height={SVG_HEIGHT}
-                    viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-                    style={{ display: "block", flex: 1 }}
-                    role="img"
-                    aria-label="Audio levels"
-                  >
-                    {Array.from({ length: BARS }, (_, i) => {
-                      const x = gap * (i + 0.5);
-                      return (
-                        <line
-                          key={i}
-                          x1={x}
-                          y1={SVG_HEIGHT / 2 + 1}
-                          x2={x}
-                          y2={SVG_HEIGHT / 2 - 1}
-                          stroke="var(--muted-foreground)"
-                          strokeWidth={barWidth}
-                          strokeLinecap="round"
-                          style={{ opacity: 0.5 }}
-                        />
-                      );
-                    })}
-                  </svg>
-                )}
-              </>
-            )}
-
-            {state === "transcribing" && (
-              <span style={pillTextStyle}>
-                {partialText ? (
-                  partialText.slice(-30)
-                ) : (
-                  <span className="shimmer-text">{pillLabel}</span>
-                )}
-              </span>
-            )}
+            {showBars && renderBars(barsSvgRef)}
 
             {state === "error" && (
               <span style={pillTextStyle}>{message || "Error"}</span>
             )}
 
-            {/* Right-side badge: timer or xN counter */}
             {badge && (
               <span
                 className="mono"
