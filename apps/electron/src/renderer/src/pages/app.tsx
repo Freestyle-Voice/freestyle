@@ -252,24 +252,40 @@ export default function AppPage(): React.JSX.Element {
     if (!streamerRef.current) {
       streamerRef.current = new Streamer(getApiBase(), {
         onConfig: (config) => {
+          console.log("[pill] onConfig:", config);
           useStreamingRef.current = config.streaming;
         },
-        onReady: () => {},
-        onPartial: () => {},
+        onReady: () => {
+          console.log("[pill] onReady: streaming session ready");
+        },
+        onPartial: (text) => {
+          console.log("[pill] onPartial:", text.slice(0, 50));
+        },
         onFinal: (text) => {
+          console.log("[pill] onFinal:", JSON.stringify(text));
           const resolver = streamResolverRef.current;
-          if (!resolver) return;
+          if (!resolver) {
+            console.warn("[pill] onFinal: no resolver waiting");
+            return;
+          }
           streamFinalTextRef.current = text;
           setTimeout(() => {
             if (streamResolverRef.current === resolver) {
+              console.log(
+                "[pill] onFinal: 3s timeout, resolving with raw text",
+              );
               streamResolverRef.current = null;
               resolver({ raw: text, cleaned: text });
             }
           }, 3000);
         },
         onCleaned: (text) => {
+          console.log("[pill] onCleaned:", JSON.stringify(text));
           const resolver = streamResolverRef.current;
-          if (!resolver) return;
+          if (!resolver) {
+            console.warn("[pill] onCleaned: no resolver waiting");
+            return;
+          }
           streamResolverRef.current = null;
           resolver({
             raw: streamFinalTextRef.current || text,
@@ -277,6 +293,7 @@ export default function AppPage(): React.JSX.Element {
           });
         },
         onError: (msg) => {
+          console.error("[pill] onError:", msg);
           if (!pillActiveRef.current) return;
           if (wantsMicRef.current) return;
           setState("error");
@@ -577,6 +594,7 @@ export default function AppPage(): React.JSX.Element {
     const empty: TranscribeResult = { raw: "", cleaned: "" };
 
     if (useStreamingRef.current && streamerRef.current) {
+      console.log("[pill] commitRecording: using streaming path");
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
 
@@ -585,16 +603,22 @@ export default function AppPage(): React.JSX.Element {
         streamResolverRef.current = resolve;
         setTimeout(() => {
           if (streamResolverRef.current === resolve) {
+            console.warn(
+              "[pill] commitRecording: 30s timeout, resolving empty",
+            );
             streamResolverRef.current = null;
             resolve(empty);
           }
         }, 30000);
       });
+      console.log("[pill] commitRecording: calling streamer.commit()");
       streamerRef.current.commit();
       queueRef.current.push({ promise: transcribePromise });
       drainQueue();
       return;
     }
+
+    console.log("[pill] commitRecording: using REST path");
 
     let wavBlob: Blob | null = streamerRef.current?.getWavBlob() ?? null;
     if (!wavBlob && recorderRef.current.isRecording()) {
