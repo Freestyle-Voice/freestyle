@@ -110,6 +110,7 @@ export default function AppPage(): React.JSX.Element {
   const [state, setState] = useState<PillState>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [message, setMessage] = useState("");
+  const [pillAlign, setPillAlign] = useState<"start" | "center" | "end">("end");
   const useStreamingRef = useRef(false);
 
   const [isReRecording, setIsReRecording] = useState(false);
@@ -607,13 +608,21 @@ export default function AppPage(): React.JSX.Element {
     hidePill();
   }, [stopVisualization, hidePill]);
 
-  // ---- Sound preference ----
+  // ---- Preferences ----
   useEffect(() => {
     getClient()
       .api.settings[":key"].$get({ param: { key: "sound_enabled" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.value === "false") _soundEnabled = false;
+      })
+      .catch(() => {});
+    window.api
+      ?.getPillPosition()
+      .then((pos) => {
+        if (pos?.startsWith("top")) setPillAlign("start");
+        else if (pos?.startsWith("bottom") || !pos) setPillAlign("end");
+        else setPillAlign("center");
       })
       .catch(() => {});
   }, []);
@@ -724,7 +733,13 @@ export default function AppPage(): React.JSX.Element {
 
   return (
     <div
-      className="flex h-screen w-screen items-center justify-center select-none"
+      className={`flex h-screen w-screen justify-center select-none ${
+        pillAlign === "start"
+          ? "items-start pt-2"
+          : pillAlign === "end"
+            ? "items-end pb-2"
+            : "items-center"
+      }`}
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <style>
