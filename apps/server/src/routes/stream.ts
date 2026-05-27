@@ -214,6 +214,9 @@ const stream = new Hono().get(
 
       onMessage(event, ws) {
         const data = event.data;
+        console.log(
+          `[stream] onMessage: type=${typeof data}, constructor=${data?.constructor?.name}, isAB=${data instanceof ArrayBuffer}, len=${(data as ArrayBuffer)?.byteLength ?? (data as string)?.length ?? "?"}`,
+        );
         const isBinary =
           data instanceof ArrayBuffer ||
           ArrayBuffer.isView(data) ||
