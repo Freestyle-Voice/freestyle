@@ -59,6 +59,10 @@ declare global {
       onFullscreenChanged: (
         callback: (isFullscreen: boolean) => void,
       ) => () => void;
+      // Microphone activity detection
+      onMicActivityChanged: (
+        callback: (state: "active" | "inactive" | "unknown") => void,
+      ) => () => void;
     };
   }
 }

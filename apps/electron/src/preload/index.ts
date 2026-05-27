@@ -132,6 +132,17 @@ const api = {
     ipcRenderer.on("fullscreen:changed", handler);
     return () => ipcRenderer.removeListener("fullscreen:changed", handler);
   },
+  // Microphone activity detection
+  onMicActivityChanged: (
+    callback: (state: "active" | "inactive" | "unknown") => void,
+  ): (() => void) => {
+    const handler = (
+      _: unknown,
+      state: "active" | "inactive" | "unknown",
+    ): void => callback(state);
+    ipcRenderer.on("mic:activity-changed", handler);
+    return () => ipcRenderer.removeListener("mic:activity-changed", handler);
+  },
 };
 
 // Use `contextBridge` APIs to expose Electron APIs to
