@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import type { CircleGeometry, Mesh, ShaderMaterial } from "three";
 import { Color, RepeatWrapping, Uniform } from "three";
+import perlinNoiseUrl from "../../assets/perlin-noise.png";
 
 export type AgentState = null | "thinking" | "listening" | "talking";
 
@@ -96,9 +97,7 @@ function Scene({
   const targetColor1Ref = useRef(new Color(colors[0]));
   const targetColor2Ref = useRef(new Color(colors[1]));
   const animSpeedRef = useRef(0.1);
-  const perlinNoiseTexture = useTexture(
-    "https://storage.googleapis.com/eleven-public-cdn/images/perlin-noise.png",
-  );
+  const perlinNoiseTexture = useTexture(perlinNoiseUrl);
 
   const agentRef = useRef<AgentState>(agentState);
   const modeRef = useRef<"auto" | "manual">(volumeMode);
