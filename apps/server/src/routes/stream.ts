@@ -83,6 +83,7 @@ const stream = new Hono().get(
       } catch {}
 
       upstream = openStreamingSession({
+        providerId: defaults.voice.provider,
         apiKey,
         model: modelShort,
         prompt,
@@ -102,7 +103,6 @@ const stream = new Hono().get(
               );
             }
 
-            // Skip empty transcriptions entirely — don't send to client
             if (!rawText?.trim()) {
               ws.send(JSON.stringify({ type: "final", text: "" }));
               return;
@@ -185,13 +185,11 @@ const stream = new Hono().get(
       },
 
       onMessage(event, ws) {
-        // Binary data = audio chunk
         if (event.data instanceof ArrayBuffer) {
           upstream?.sendAudio(event.data);
           return;
         }
 
-        // Text data = JSON command
         let msg: {
           type: string;
           context?: string;

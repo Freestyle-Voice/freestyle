@@ -1,16 +1,13 @@
-import { experimental_transcribe as transcribe } from "ai";
 import { Hono } from "hono";
 import { getDb } from "../lib/db.js";
 import { postProcess } from "../lib/post-process.js";
-import {
-  createTranscriptionModel,
-  getDefaultModels,
-} from "../lib/providers.js";
+import { getDefaultModels } from "../lib/providers.js";
+import { getProvider } from "../lib/streaming/registry.js";
+import { getApiKeyForProvider } from "../lib/streaming-stt.js";
 
 const transcribeRoute = new Hono().post("/", async (c) => {
   const start = Date.now();
 
-  // Get audio from request body
   const contentType = c.req.header("content-type") ?? "";
   let audioData: Uint8Array;
 
@@ -29,14 +26,10 @@ const transcribeRoute = new Hono().post("/", async (c) => {
     return c.json({ error: "Empty audio data" }, 400);
   }
 
-  // Get context header (JSON with app, url, title)
   const appContext = c.req.header("x-app-context") ?? null;
 
-  // Audio duration: compute from WAV byte length (most accurate), fall back
-  // to the client-supplied header which includes mic-init overhead.
   let audioDurationMs = 0;
   if (audioData.length > 44) {
-    // 16kHz 16-bit mono PCM = 32000 bytes/sec → 32 bytes/ms
     audioDurationMs = Math.round((audioData.length - 44) / 32);
   }
   if (!audioDurationMs) {
@@ -44,7 +37,6 @@ const transcribeRoute = new Hono().post("/", async (c) => {
     if (h) audioDurationMs = Number(h) || 0;
   }
 
-  // Get configured models
   const defaults = getDefaultModels();
   if (!defaults.voice) {
     return c.json(
@@ -55,7 +47,6 @@ const transcribeRoute = new Hono().post("/", async (c) => {
     );
   }
 
-  // Step 1: Transcribe
   const db = getDb();
   let rawText: string;
 
@@ -64,14 +55,31 @@ const transcribeRoute = new Hono().post("/", async (c) => {
     .get() as { value: string } | undefined;
   const language = langSetting?.value || undefined;
 
-  try {
-    const model = createTranscriptionModel(
-      defaults.voice.provider,
-      defaults.voice.model_id,
+  const provider = getProvider(defaults.voice.provider);
+  if (!provider) {
+    return c.json(
+      {
+        error: `Unsupported transcription provider: ${defaults.voice.provider}`,
+      },
+      400,
     );
-    const result = await transcribe({
-      model: model as Parameters<typeof transcribe>[0]["model"],
+  }
+
+  const apiKey = getApiKeyForProvider(defaults.voice.provider);
+  if (!apiKey) {
+    return c.json(
+      {
+        error: `No API key configured for provider: ${defaults.voice.provider}`,
+      },
+      400,
+    );
+  }
+
+  try {
+    const result = await provider.transcribe({
       audio: audioData,
+      model: defaults.voice.model_id,
+      apiKey,
       ...(language && language !== "auto" ? { language } : {}),
     });
     rawText = result.text;
@@ -106,9 +114,6 @@ const transcribeRoute = new Hono().post("/", async (c) => {
   const skipPostProcess = c.req.header("x-skip-post-process") === "true";
 
   if (skipPostProcess) {
-    // Caller will handle post-processing (e.g. stitching multiple
-    // recordings and running /api/post-process on the combined text).
-    // Still save raw text to history.
     Promise.resolve()
       .then(() => {
         db.prepare(
@@ -135,10 +140,8 @@ const transcribeRoute = new Hono().post("/", async (c) => {
     });
   }
 
-  // Post-process (LLM cleanup + dictionary), then return immediately.
   const pp = await postProcess(rawText, appContext);
 
-  // Fire-and-forget: save to history without blocking the response
   Promise.resolve()
     .then(() => {
       db.prepare(
