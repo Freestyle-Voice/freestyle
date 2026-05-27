@@ -16,7 +16,7 @@
 
 Freestyle is the dictation app that converts your voice into text. Hold down a hotkey, talk, and clean text will appear wherever your cursor is. Speak 4X faster than you type. 
 
-Freestyle is free, open source, and local first, ensuring your dictations are private and never leaves your device. 
+Freestyle is free and local first, ensuring your dictations are private and never leaves your device. 
 
 ### Features
 
