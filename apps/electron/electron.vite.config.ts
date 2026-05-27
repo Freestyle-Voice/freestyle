@@ -10,6 +10,7 @@ export default defineConfig({
       rollupOptions: {
         external: [
           "electron",
+          "audify",
           "node-global-key-listener",
           "bufferutil",
           "utf-8-validate",
