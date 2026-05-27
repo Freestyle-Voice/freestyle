@@ -2,6 +2,8 @@ import * as Sentry from "@sentry/electron/main";
 
 Sentry.init({
   dsn: "https://b7ed8a9e5051cfe650f0f26ca2482b4b@o4509750817325057.ingest.us.sentry.io/4511454571528192",
+  release: `freestyle@${process.env.npm_package_version ?? "0.0.0"}`,
+  environment: process.env.NODE_ENV ?? "development",
   enabled: process.env.NODE_ENV === "production",
   skipOpenTelemetrySetup: true,
 });
@@ -627,6 +629,10 @@ function createTray(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
+  Sentry.setTag("platform", process.platform);
+  Sentry.setTag("arch", process.arch);
+  Sentry.setTag("electron", process.versions.electron ?? "unknown");
+
   // Set app user model id for windows
   electronApp.setAppUserModelId("com.freestyle.app");
 
@@ -803,6 +809,7 @@ app.whenReady().then(async () => {
       recordingListener = new GlobalKeyboardListener();
     } catch (err) {
       console.error("[hotkey] Failed to create recording listener:", err);
+      Sentry.captureException(err);
       settingsWindow?.webContents.send("hotkey-record:cancel");
       settingsWindow?.webContents.send("hotkey:error", {
         message:
@@ -941,6 +948,7 @@ app.whenReady().then(async () => {
         startServer(0);
       } else {
         console.error("Server failed to start:", err);
+        Sentry.captureException(err);
       }
     });
   }
@@ -1272,6 +1280,7 @@ function registerHotkey(hotkey?: string): void {
     keyListener = new GlobalKeyboardListener();
   } catch (err) {
     console.error("[hotkey] Failed to create GlobalKeyboardListener:", err);
+    Sentry.captureException(err);
     keyListener = null;
     const errorPayload = {
       message:
@@ -1358,4 +1367,5 @@ app.on("before-quit", () => {
     httpServer.close();
     httpServer = null;
   }
+  Sentry.close(2000);
 });

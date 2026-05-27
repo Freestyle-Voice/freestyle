@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { getDb } from "../lib/db.js";
 import { postProcess } from "../lib/post-process.js";
 import { getDefaultModels } from "../lib/providers.js";
+import { captureException } from "../lib/sentry.js";
 import { stripProviderPrefix } from "../lib/streaming/types.js";
 import {
   getApiKeyForProvider,
@@ -137,6 +138,7 @@ const stream = new Hono().get(
                 }
               })
               .catch((err) => {
+                captureException(err);
                 console.error("Post-processing failed:", err);
                 try {
                   const db = getDb();

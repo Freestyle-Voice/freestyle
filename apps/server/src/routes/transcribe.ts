@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getDb } from "../lib/db.js";
 import { postProcess } from "../lib/post-process.js";
 import { getDefaultModels } from "../lib/providers.js";
+import { captureException } from "../lib/sentry.js";
 import { getProvider } from "../lib/streaming/registry.js";
 import { getApiKeyForProvider } from "../lib/streaming-stt.js";
 
@@ -89,6 +90,7 @@ const transcribeRoute = new Hono().post("/", async (c) => {
       );
     }
   } catch (err) {
+    captureException(err);
     return c.json(
       {
         error: "Transcription failed",

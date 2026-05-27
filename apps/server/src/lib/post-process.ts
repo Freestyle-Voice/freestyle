@@ -2,6 +2,7 @@ import { generateText } from "ai";
 import { getModelCost } from "../routes/models.js";
 import { getDb } from "./db.js";
 import { createChatModel, getDefaultModels } from "./providers.js";
+import { captureException } from "./sentry.js";
 
 /** Build a context string from the raw x-app-context header for matching */
 function buildMatchContext(rawContext: string | null): string {
@@ -175,6 +176,7 @@ IMPORTANT: Your entire response must be the cleaned text and nothing else. No qu
 
       cleaned = llmText;
     } catch (err) {
+      captureException(err);
       console.error("LLM cleanup failed:", err);
     }
   }
