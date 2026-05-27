@@ -687,11 +687,6 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window);
   });
 
-  // IPC: debug log from pill renderer → main process stdout
-  ipcMain.on("debug:log", (_event, msg: string) => {
-    console.log(`[pill] ${msg}`);
-  });
-
   // IPC: paste text at cursor
   ipcMain.handle("paste:text", async (_event, text: string) => {
     await pasteIntoFocusedApp(text);

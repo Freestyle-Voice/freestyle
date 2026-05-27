@@ -136,8 +136,7 @@ const transcribeRoute = new Hono().post("/", async (c) => {
   }
 
   // Post-process (LLM cleanup + dictionary), then return immediately.
-  const previousText = c.req.header("x-previous-text") ?? undefined;
-  const pp = await postProcess(rawText, appContext, previousText);
+  const pp = await postProcess(rawText, appContext);
 
   // Fire-and-forget: save to history without blocking the response
   Promise.resolve()

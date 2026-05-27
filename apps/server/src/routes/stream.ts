@@ -19,7 +19,6 @@ const stream = new Hono().get(
     let voiceDefaults: { provider: string; model_id: string } | null = null;
     let appContext: string | null = null;
     let audioDurationMs = 0;
-    let previousText: string | null = null;
 
     function connectUpstream(ws: {
       send: (data: string) => void;
@@ -109,22 +108,12 @@ const stream = new Hono().get(
               return;
             }
 
-            // Send raw text immediately so the client can paste without waiting.
-            // When appending to a previous transcription, combine them for the
-            // client so it can paste the full text right away.
-            const combinedRaw = previousText
-              ? `${previousText.trim()} ${rawText.trim()}`
-              : rawText;
-            ws.send(JSON.stringify({ type: "final", text: combinedRaw }));
+            ws.send(JSON.stringify({ type: "final", text: rawText }));
 
-            // Run post-processing in the background for history.
-            // Pass previousText so the LLM can produce a cohesive result.
-            const prevForPP = previousText;
-            previousText = null;
-            postProcess(rawText, appContext, prevForPP ?? undefined)
+            postProcess(rawText, appContext)
               .then((pp) => {
                 const finalText = pp.cleaned;
-                if (finalText !== combinedRaw && !closed) {
+                if (finalText !== rawText && !closed) {
                   ws.send(JSON.stringify({ type: "cleaned", text: finalText }));
                 }
                 try {
@@ -134,8 +123,8 @@ const stream = new Hono().get(
                        (raw_text, cleaned_text, voice_provider, voice_model, llm_provider, llm_model, duration_ms, audio_duration_ms, input_tokens, output_tokens, cost_usd)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   ).run(
-                    combinedRaw,
-                    finalText !== combinedRaw ? finalText : null,
+                    rawText,
+                    finalText !== rawText ? finalText : null,
                     voiceDefaults!.provider,
                     voiceDefaults!.model_id,
                     pp.llmProvider,
@@ -159,7 +148,7 @@ const stream = new Hono().get(
                        (raw_text, voice_provider, voice_model, duration_ms, audio_duration_ms)
                        VALUES (?, ?, ?, ?, ?)`,
                   ).run(
-                    combinedRaw,
+                    rawText,
                     voiceDefaults!.provider,
                     voiceDefaults!.model_id,
                     durationMs,
@@ -207,7 +196,6 @@ const stream = new Hono().get(
           type: string;
           context?: string;
           audioDurationMs?: number;
-          previousText?: string;
         };
         try {
           msg = JSON.parse(
@@ -236,9 +224,6 @@ const stream = new Hono().get(
           case "commit":
             if (msg.audioDurationMs && msg.audioDurationMs > 0) {
               audioDurationMs = msg.audioDurationMs;
-            }
-            if (msg.previousText) {
-              previousText = msg.previousText;
             }
             upstream?.commit();
             break;

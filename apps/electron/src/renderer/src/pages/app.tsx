@@ -79,10 +79,6 @@ function formatTimer(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function dbg(msg: string): void {
-  window.api.debugLog(msg);
-}
-
 const pillInnerStyle: React.CSSProperties = {
   height: 48,
   padding: "0 10px",
@@ -164,7 +160,6 @@ export default function AppPage(): React.JSX.Element {
     const batch = [...queueRef.current];
     queueRef.current = [];
 
-    dbg(`[drainQueue] waiting for ${batch.length} result(s)`);
     const results = await Promise.all(batch.map((e) => e.promise));
 
     if (!pillActiveRef.current) {
@@ -195,13 +190,9 @@ export default function AppPage(): React.JSX.Element {
     if (nonEmpty.length === 1) {
       // Single recording — use the already-post-processed cleaned text.
       finalText = nonEmpty[0].cleaned.trim() || nonEmpty[0].raw.trim();
-      dbg("[drainQueue] single result, using cleaned text");
     } else {
       // Multiple recordings — stitch raw texts and post-process together.
       const combined = nonEmpty.map((r) => r.raw).join(" ");
-      dbg(
-        `[drainQueue] stitching ${nonEmpty.length} results, calling /api/post-process`,
-      );
       setPillLabel("Processing...");
       try {
         const res = await fetch(`${getApiBase()}/api/post-process`, {
@@ -241,9 +232,8 @@ export default function AppPage(): React.JSX.Element {
       return;
     }
 
-    dbg(`[drainQueue] pasting (${finalText.length} chars)`);
     await window.api.pasteText(finalText);
-    window.api?.sendTranscriptionDone();
+    window.api.sendTranscriptionDone();
 
     drainingRef.current = false;
 
@@ -252,7 +242,6 @@ export default function AppPage(): React.JSX.Element {
       queueRef.current.length === 0 &&
       pillActiveRef.current
     ) {
-      dbg("[drainQueue] done, hiding pill");
       hidePill();
     }
   }, []);
@@ -268,19 +257,16 @@ export default function AppPage(): React.JSX.Element {
         onReady: () => {},
         onPartial: (text) => setPartialText(text),
         onFinal: async (_text) => {
-          dbg(`[onFinal] active=${pillActiveRef.current}`);
           // Streaming onFinal is not used in the queue model for the
           // REST path.  For streaming mode it would need to resolve a
           // promise — but the current user is on REST, so this is a
           // no-op safety net.  The queue handles everything.
         },
         onCleaned: (_text) => {
-          dbg(`[onCleaned] active=${pillActiveRef.current}`);
           // Cleaned results are handled by the transcribe endpoint
           // response directly.  No action needed here.
         },
         onError: (msg) => {
-          dbg(`[onError] msg=${msg}, active=${pillActiveRef.current}`);
           if (!pillActiveRef.current) return;
           if (wantsMicRef.current) return;
           setState("error");
@@ -373,7 +359,6 @@ export default function AppPage(): React.JSX.Element {
 
   // ---- Hide pill ----
   const hidePill = useCallback(() => {
-    dbg("[hidePill]");
     setState("idle");
     setPartialText("");
     setMessage("");
@@ -391,11 +376,7 @@ export default function AppPage(): React.JSX.Element {
   // ---- Start recording ----
   const startRecording = useCallback(
     async (forReRecord = false) => {
-      dbg(
-        `[startRecording] forReRec=${forReRecord}, wantsMic=${wantsMicRef.current}`,
-      );
       if (wantsMicRef.current) {
-        dbg("[startRecording] SKIP: wantsMic already true");
         return;
       }
       wantsMicRef.current = true;
@@ -481,9 +462,6 @@ export default function AppPage(): React.JSX.Element {
   // Fires a transcription request and pushes the result promise into the
   // queue.  Does NOT paste or hide — the queue drain handles that.
   const commitRecording = useCallback(async () => {
-    dbg(
-      `[commitRecording] wantsMic=${wantsMicRef.current}, queueLen=${queueRef.current.length}`,
-    );
     wantsMicRef.current = false;
     isReRecordingRef.current = false;
     setIsReRecording(false);
@@ -492,7 +470,6 @@ export default function AppPage(): React.JSX.Element {
 
     const recordingDuration = Date.now() - startTimeRef.current;
     if (recordingDuration < 1000) {
-      dbg("[commitRecording] short (<1s), skipping");
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
       streamerRef.current?.cancel();
@@ -519,7 +496,6 @@ export default function AppPage(): React.JSX.Element {
 
     // If cancel/hide fired while we were getting the blob, bail out.
     if (!pillActiveRef.current) {
-      dbg("[commitRecording] pill no longer active, bailing");
       return;
     }
 
@@ -556,7 +532,6 @@ export default function AppPage(): React.JSX.Element {
 
     // Push to queue
     queueRef.current.push({ promise: transcribePromise });
-    dbg(`[commitRecording] pushed to queue, len=${queueRef.current.length}`);
 
     // Start draining if not already draining
     drainQueue();
@@ -564,7 +539,6 @@ export default function AppPage(): React.JSX.Element {
 
   // ---- Cancel ----
   const cancelRecording = useCallback(() => {
-    dbg("[cancelRecording]");
     wantsMicRef.current = false;
     pillActiveRef.current = false;
     isReRecordingRef.current = false;
@@ -595,7 +569,6 @@ export default function AppPage(): React.JSX.Element {
   useEffect(() => {
     const removeDown = window.api.onHotkeyDown(() => {
       const s = stateRef.current;
-      dbg(`[hotkeyDown] state=${s}, wantsMic=${wantsMicRef.current}`);
       if (s === "idle" || s === "error") {
         startRecording(false);
       } else if (s === "transcribing") {
@@ -603,9 +576,6 @@ export default function AppPage(): React.JSX.Element {
       }
     });
     const removeUp = window.api.onHotkeyUp(() => {
-      dbg(
-        `[hotkeyUp] state=${stateRef.current}, wantsMic=${wantsMicRef.current}`,
-      );
       if (stateRef.current === "recording") {
         commitRecording();
       } else if (stateRef.current === "initializing") {

@@ -112,16 +112,12 @@ export class Streamer {
     this.source.connect(this.workletNode);
   }
 
-  commit(previousText?: string): void {
+  commit(): void {
     const audioDurationMs = Math.round(
       (this.pcmSampleCount / TARGET_RATE) * 1000,
     );
     this.stopCapture();
-    const msg: Record<string, unknown> = { type: "commit", audioDurationMs };
-    if (previousText) {
-      msg.previousText = previousText;
-    }
-    this.sendJSON(msg);
+    this.sendJSON({ type: "commit", audioDurationMs });
   }
 
   cancel(): void {

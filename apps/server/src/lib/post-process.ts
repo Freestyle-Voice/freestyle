@@ -77,16 +77,10 @@ export interface PostProcessResult {
 /**
  * Run LLM cleanup and dictionary replacements on transcribed text.
  * Returns the cleaned text plus metadata for history tracking.
- *
- * When `previousText` is provided, the raw transcription is appended to it
- * and the combined text is sent through post-processing as a whole.  This
- * is used for the re-record flow where the user presses the hotkey again
- * while the first transcription is still being processed.
  */
 export async function postProcess(
   rawText: string,
   appContext: string | null,
-  previousText?: string,
 ): Promise<PostProcessResult> {
   const db = getDb();
   const defaults = getDefaultModels();
@@ -96,15 +90,12 @@ export async function postProcess(
   let llmModel: string | null = null;
   let costUsd = 0;
 
-  // If the raw text is purely filler words / punctuation, treat as empty.
-  // When there's previousText we still want to return it even if the new
-  // chunk was empty.
   const stripped = rawText
     .replace(/\b(um+|uh+|ah+|er+|hm+|hmm+|mm+|mhm+|you know|i mean)\b/gi, "")
     .replace(/[.…,!?\-–—\s]+/g, "");
   if (!stripped) {
     return {
-      cleaned: previousText?.trim() || "",
+      cleaned: "",
       llmProvider: null,
       llmModel: null,
       inputTokens: 0,
@@ -113,14 +104,7 @@ export async function postProcess(
     };
   }
 
-  // When appending to a previous transcription, combine the already-
-  // processed text with the new raw transcription so the LLM can
-  // produce a cohesive result.
-  const textToProcess = previousText
-    ? `${previousText.trim()} ${rawText.trim()}`
-    : rawText;
-
-  let cleaned = textToProcess;
+  let cleaned = rawText;
 
   // LLM cleanup
   const llmSetting = db
@@ -130,12 +114,8 @@ export async function postProcess(
 
   if (llmEnabled && defaults.llm) {
     const contextHint = getContextHint(appContext, db);
-    const appendNote = previousText
-      ? `\nNote: The text below is a continuation — the first part was already cleaned and the second part is newly transcribed. Clean up the entire combined text so it reads as one cohesive piece.\n`
-      : "";
-
     const systemPrompt = `You clean up raw voice transcriptions into polished, ready-to-send text.
-${contextHint ? `\nContext: ${contextHint}\n` : ""}${appendNote}
+${contextHint ? `\nContext: ${contextHint}\n` : ""}
 Edits you MUST apply:
 1. Remove filler words (um, uh, like, you know, basically, so, I mean, right, actually, literally)
 2. Remove false starts, repeated words, and self-corrections — keep only the final intended version
@@ -164,7 +144,7 @@ IMPORTANT: Your entire response must be the cleaned text and nothing else. No qu
       const result = await generateText({
         model: chatModel,
         system: systemPrompt,
-        prompt: textToProcess,
+        prompt: rawText,
       });
       let llmText = result.text.trim();
       inputTokens = result.usage?.inputTokens ?? 0;
@@ -174,13 +154,13 @@ IMPORTANT: Your entire response must be the cleaned text and nothing else. No qu
 
       // Guard: if the LLM leaked reasoning/commentary, extract the
       // actual cleaned text.
-      if (llmText.includes("\n") && llmText.length > textToProcess.length * 2) {
+      if (llmText.includes("\n") && llmText.length > rawText.length * 2) {
         const quoted = llmText.match(/"([^"]+)"[^"]*$/);
         if (quoted) {
           llmText = quoted[1];
         } else {
           const lines = llmText.split("\n").filter((l) => l.trim());
-          llmText = lines[lines.length - 1]?.trim() ?? textToProcess;
+          llmText = lines[lines.length - 1]?.trim() ?? rawText;
         }
       }
 
@@ -188,7 +168,7 @@ IMPORTANT: Your entire response must be the cleaned text and nothing else. No qu
       if (
         llmText.startsWith('"') &&
         llmText.endsWith('"') &&
-        !textToProcess.startsWith('"')
+        !rawText.startsWith('"')
       ) {
         llmText = llmText.slice(1, -1);
       }
