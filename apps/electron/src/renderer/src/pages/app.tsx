@@ -528,18 +528,8 @@ export default function AppPage(): React.JSX.Element {
 
         startListening(stream);
         try {
-          window.api?.debugLog("[pill] calling startCapture...");
-          await getStreamer().startCapture(
-            stream,
-            analyserCtxRef.current ?? undefined,
-          );
-          window.api?.debugLog("[pill] startCapture completed");
-        } catch (captureErr) {
-          window.api?.debugLog(
-            "[pill] startCapture FAILED:",
-            String(captureErr),
-          );
-        }
+          await getStreamer().startCapture(stream);
+        } catch {}
       } catch (err) {
         wantsMicRef.current = false;
         pendingCommitRef.current = false;
