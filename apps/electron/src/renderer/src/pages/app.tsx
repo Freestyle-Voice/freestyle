@@ -811,10 +811,11 @@ export default function AppPage(): React.JSX.Element {
               borderRadius: 28,
               position: "absolute",
               bottom: -14,
-              left: 6,
-              right: 6,
+              left: 0,
+              right: 0,
               opacity: 0.5,
               transform: "scale(0.92)",
+              transformOrigin: "center center",
               pointerEvents: "none",
               zIndex: 0,
             }}
