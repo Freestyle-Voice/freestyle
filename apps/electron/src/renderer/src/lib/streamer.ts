@@ -57,6 +57,10 @@ export class Streamer {
     stream: MediaStream,
     sharedCtx?: AudioContext,
   ): Promise<void> {
+    window.api?.debugLog(
+      "[streamer] startCapture called, sharedCtx=",
+      !!sharedCtx,
+    );
     this.capturing = true;
     this.pendingChunks = [];
     this.pcmChunks = [];
@@ -83,8 +87,10 @@ export class Streamer {
     if (this.ctx.state === "suspended") await this.ctx.resume();
 
     if (!this.workletReady) {
+      window.api?.debugLog("[streamer] loading AudioWorklet module...");
       await this.ctx.audioWorklet.addModule(getPCMProcessorUrl());
       this.workletReady = true;
+      window.api?.debugLog("[streamer] AudioWorklet module loaded");
     }
 
     // Disconnect previous source if leftover from a prior session.
@@ -100,6 +106,10 @@ export class Streamer {
       this.workletNode.connect(this.ctx.destination);
     }
 
+    window.api?.debugLog(
+      "[streamer] connecting source -> worklet, capturing=",
+      this.capturing,
+    );
     this.workletNode.port.onmessage = (e: MessageEvent) => {
       if (!this.capturing) return;
       const chunk = e.data as ArrayBuffer;
