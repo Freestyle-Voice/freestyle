@@ -532,8 +532,7 @@ export default function AppPage(): React.JSX.Element {
         const data = await res.json();
         return (data.raw || "").trim();
       })
-      .catch(() => "")
-      .finally(() => setPendingCount((c) => Math.max(0, c - 1)));
+      .catch(() => "");
 
     // Push to queue
     queueRef.current.push({ promise: transcribePromise });
