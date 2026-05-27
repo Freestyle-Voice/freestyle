@@ -135,6 +135,7 @@ export default function AppPage(): React.JSX.Element {
   const isReRecordingRef = useRef(false);
   const previousTextRef = useRef<string | null>(null);
   const commitSessionRef = useRef(0);
+  const pillActiveRef = useRef(false);
   const resolvePreviousTextRef = useRef<((text: string | null) => void) | null>(
     null,
   );
@@ -176,9 +177,9 @@ export default function AppPage(): React.JSX.Element {
         onFinal: async (text) => {
           const sid = sessionIdRef.current;
           dbg(
-            `[onFinal] text=${JSON.stringify(text?.slice(0, 50))}, sid=${sid}, commitSid=${commitSessionRef.current}, wantsMic=${wantsMicRef.current}`,
+            `[onFinal] text=${JSON.stringify(text?.slice(0, 50))}, sid=${sid}, commitSid=${commitSessionRef.current}, wantsMic=${wantsMicRef.current}, active=${pillActiveRef.current}`,
           );
-          if (sid === 0) return;
+          if (!pillActiveRef.current) return;
 
           // If the user is still recording a re-record, just store.
           if (wantsMicRef.current) {
@@ -228,9 +229,9 @@ export default function AppPage(): React.JSX.Element {
         },
         onCleaned: (text) => {
           dbg(
-            `[onCleaned] sid=${sessionIdRef.current}, wantsMic=${wantsMicRef.current}`,
+            `[onCleaned] active=${pillActiveRef.current}, wantsMic=${wantsMicRef.current}`,
           );
-          if (sessionIdRef.current === 0) return;
+          if (!pillActiveRef.current) return;
 
           if (wantsMicRef.current) {
             if (text.trim()) previousTextRef.current = text.trim();
@@ -243,16 +244,15 @@ export default function AppPage(): React.JSX.Element {
         },
         onError: (msg) => {
           dbg(
-            `[onError] msg=${msg}, sid=${sessionIdRef.current}, wantsMic=${wantsMicRef.current}`,
+            `[onError] msg=${msg}, active=${pillActiveRef.current}, wantsMic=${wantsMicRef.current}`,
           );
-          if (sessionIdRef.current === 0) return;
+          if (!pillActiveRef.current) return;
 
           if (wantsMicRef.current) {
             previousTextRef.current = null;
             return;
           }
 
-          sessionIdRef.current = 0;
           commitSessionRef.current = 0;
           wantsMicRef.current = false;
           stopVisualization();
@@ -350,6 +350,8 @@ export default function AppPage(): React.JSX.Element {
   }, []);
 
   // Hide the pill and reset ALL state so the next show starts clean.
+  // Note: sessionIdRef is NOT reset — it monotonically increases so
+  // that stale async callbacks can never collide with a new session.
   const hidePill = useCallback(() => {
     dbg("[hidePill]");
     setState("idle");
@@ -358,10 +360,9 @@ export default function AppPage(): React.JSX.Element {
     setIsReRecording(false);
     isReRecordingRef.current = false;
     wantsMicRef.current = false;
-    sessionIdRef.current = 0;
+    pillActiveRef.current = false;
     commitSessionRef.current = 0;
     previousTextRef.current = null;
-    // Wake up any waiting commit so it can exit cleanly
     if (resolvePreviousTextRef.current) {
       resolvePreviousTextRef.current(null);
       resolvePreviousTextRef.current = null;
@@ -380,6 +381,7 @@ export default function AppPage(): React.JSX.Element {
         return;
       }
       wantsMicRef.current = true;
+      pillActiveRef.current = true;
       pendingCommitRef.current = false;
       setMessage("");
       setPartialText("");
@@ -651,7 +653,7 @@ export default function AppPage(): React.JSX.Element {
   const cancelRecording = useCallback(() => {
     dbg("[cancelRecording]");
     wantsMicRef.current = false;
-    sessionIdRef.current = 0;
+    pillActiveRef.current = false;
     commitSessionRef.current = 0;
     isReRecordingRef.current = false;
     setIsReRecording(false);
@@ -817,13 +819,12 @@ export default function AppPage(): React.JSX.Element {
               borderRadius: 28,
               position: "absolute",
               bottom: -14,
-              left: 0,
-              right: 0,
+              left: "50%",
+              transform: "translateX(-50%) scale(0.92)",
               opacity: 0.5,
-              transform: "scale(0.92)",
-              transformOrigin: "center center",
               pointerEvents: "none",
               zIndex: 0,
+              width: "100%",
             }}
           >
             <div
