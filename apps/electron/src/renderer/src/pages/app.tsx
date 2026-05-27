@@ -252,20 +252,20 @@ export default function AppPage(): React.JSX.Element {
     if (!streamerRef.current) {
       streamerRef.current = new Streamer(getApiBase(), {
         onConfig: (config) => {
-          console.log("[pill] onConfig:", config);
+          window.api?.debugLog("[pill] onConfig:", config);
           useStreamingRef.current = config.streaming;
         },
         onReady: () => {
-          console.log("[pill] onReady: streaming session ready");
+          window.api?.debugLog("[pill] onReady: streaming session ready");
         },
         onPartial: (text) => {
-          console.log("[pill] onPartial:", text.slice(0, 50));
+          window.api?.debugLog("[pill] onPartial:", text.slice(0, 50));
         },
         onFinal: (text) => {
-          console.log("[pill] onFinal:", JSON.stringify(text));
+          window.api?.debugLog("[pill] onFinal:", JSON.stringify(text));
           const resolver = streamResolverRef.current;
           if (!resolver) {
-            console.warn("[pill] onFinal: no resolver waiting");
+            window.api?.debugLog("[pill] WARN: onFinal: no resolver waiting");
             return;
           }
           streamFinalTextRef.current = text;
@@ -280,10 +280,10 @@ export default function AppPage(): React.JSX.Element {
           }, 3000);
         },
         onCleaned: (text) => {
-          console.log("[pill] onCleaned:", JSON.stringify(text));
+          window.api?.debugLog("[pill] onCleaned:", JSON.stringify(text));
           const resolver = streamResolverRef.current;
           if (!resolver) {
-            console.warn("[pill] onCleaned: no resolver waiting");
+            window.api?.debugLog("[pill] WARN: onCleaned: no resolver waiting");
             return;
           }
           streamResolverRef.current = null;
@@ -293,7 +293,7 @@ export default function AppPage(): React.JSX.Element {
           });
         },
         onError: (msg) => {
-          console.error("[pill] onError:", msg);
+          window.api?.debugLog("[pill] ERROR: onError:", msg);
           if (!pillActiveRef.current) return;
           if (wantsMicRef.current) return;
           setState("error");
@@ -594,7 +594,7 @@ export default function AppPage(): React.JSX.Element {
     const empty: TranscribeResult = { raw: "", cleaned: "" };
 
     if (useStreamingRef.current && streamerRef.current) {
-      console.log("[pill] commitRecording: using streaming path");
+      window.api?.debugLog("[pill] commitRecording: using streaming path");
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
 
@@ -611,14 +611,14 @@ export default function AppPage(): React.JSX.Element {
           }
         }, 30000);
       });
-      console.log("[pill] commitRecording: calling streamer.commit()");
+      window.api?.debugLog("[pill] commitRecording: calling streamer.commit()");
       streamerRef.current.commit();
       queueRef.current.push({ promise: transcribePromise });
       drainQueue();
       return;
     }
 
-    console.log("[pill] commitRecording: using REST path");
+    window.api?.debugLog("[pill] commitRecording: using REST path");
 
     let wavBlob: Blob | null = streamerRef.current?.getWavBlob() ?? null;
     if (!wavBlob && recorderRef.current.isRecording()) {

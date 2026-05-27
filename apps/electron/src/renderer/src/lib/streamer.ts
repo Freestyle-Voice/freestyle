@@ -117,7 +117,7 @@ export class Streamer {
     const audioDurationMs = Math.round(
       (this.pcmSampleCount / TARGET_RATE) * 1000,
     );
-    console.log(
+    window.api?.debugLog(
       `[streamer] commit: ${this.audioChunksSent} chunks sent, ${audioDurationMs}ms audio, pcmSamples=${this.pcmSampleCount}`,
     );
     this.stopCapture();
@@ -174,14 +174,14 @@ export class Streamer {
       this.ws.send(chunk);
       this.audioChunksSent++;
       if (this.audioChunksSent % 50 === 1) {
-        console.log(
+        window.api?.debugLog(
           `[streamer] sent ${this.audioChunksSent} audio chunks (${chunk.byteLength} bytes each), sessionReady=${this.sessionReady}`,
         );
       }
     } else {
       this.pendingChunks.push(chunk);
       if (this.pendingChunks.length % 50 === 1) {
-        console.log(
+        window.api?.debugLog(
           `[streamer] queued ${this.pendingChunks.length} chunks (ws=${this.ws?.readyState}, sessionReady=${this.sessionReady})`,
         );
       }
