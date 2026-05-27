@@ -13,19 +13,12 @@ import { transcribeWithAiSdk } from "../utils.js";
 
 const ELEVENLABS_STT_URL = "wss://api.elevenlabs.io/v1/speech-to-text/realtime";
 const ELEVENLABS_TOKEN_URL =
-  "https://api.elevenlabs.io/v1/speech-to-text/realtime/token";
+  "https://api.elevenlabs.io/v1/single-use-token/realtime_scribe";
 
-async function getSingleUseToken(
-  apiKey: string,
-  modelId: string,
-): Promise<string> {
+async function getSingleUseToken(apiKey: string): Promise<string> {
   const res = await fetch(ELEVENLABS_TOKEN_URL, {
     method: "POST",
-    headers: {
-      "xi-api-key": apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ model_id: modelId }),
+    headers: { "xi-api-key": apiKey },
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -45,8 +38,8 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
     return transcribeWithAiSdk(opts, createElevenLabs);
   }
 
-  supportsStreaming(modelId: string): boolean {
-    return stripProviderPrefix(modelId).includes("realtime");
+  supportsStreaming(_modelId: string): boolean {
+    return true;
   }
 
   openStreamingSession(opts: StreamingSessionOptions): StreamSession {
@@ -57,13 +50,13 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
 
     const short = stripProviderPrefix(model);
 
-    getSingleUseToken(apiKey, short)
+    getSingleUseToken(apiKey)
       .then((token) => {
         const params = new URLSearchParams({
           model_id: short,
           token,
           audio_format: "pcm_16000",
-          sample_rate: "16000",
+          commit_strategy: "manual",
         });
 
         ws = new WebSocket(`${ELEVENLABS_STT_URL}?${params}`);
@@ -71,37 +64,52 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
         ws.on("open", () => {
           for (const chunk of pendingChunks) {
             const b64 = Buffer.from(chunk).toString("base64");
-            ws!.send(JSON.stringify({ audio_base64: b64 }));
+            ws!.send(
+              JSON.stringify({
+                message_type: "input_audio_chunk",
+                audio_base_64: b64,
+                commit: false,
+                sample_rate: 16000,
+              }),
+            );
           }
           pendingChunks.length = 0;
           callbacks.onReady(short);
         });
 
         ws.on("message", (raw) => {
-          let msg: { type?: string; text?: string };
+          let msg: {
+            message_type?: string;
+            text?: string;
+            error?: string;
+          };
           try {
             msg = JSON.parse(raw.toString());
           } catch {
             return;
           }
 
-          switch (msg.type) {
+          switch (msg.message_type) {
+            case "session_started":
+              return;
             case "partial_transcript":
               partialText = msg.text ?? "";
               if (partialText) callbacks.onPartial(partialText);
               return;
-            case "committed_transcript": {
+            case "committed_transcript":
+            case "committed_transcript_with_timestamps": {
               const text = msg.text ?? partialText;
               callbacks.onFinal(text.trim());
               partialText = "";
               return;
             }
-            case "error": {
-              const message =
-                (msg as { message?: string }).message ?? "ElevenLabs error";
-              callbacks.onError(message);
+            case "error":
+            case "auth_error":
+            case "quota_exceeded":
+            case "rate_limited":
+            case "transcriber_error":
+              callbacks.onError(msg.error ?? "ElevenLabs error");
               return;
-            }
           }
         });
 
@@ -125,11 +133,25 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
           return;
         }
         const b64 = Buffer.from(chunk).toString("base64");
-        ws.send(JSON.stringify({ audio_base64: b64 }));
+        ws.send(
+          JSON.stringify({
+            message_type: "input_audio_chunk",
+            audio_base_64: b64,
+            commit: false,
+            sample_rate: 16000,
+          }),
+        );
       },
       commit(): void {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        ws.send(JSON.stringify({ type: "commit" }));
+        ws.send(
+          JSON.stringify({
+            message_type: "input_audio_chunk",
+            audio_base_64: "",
+            commit: true,
+            sample_rate: 16000,
+          }),
+        );
       },
       cancel(): void {
         pendingChunks.length = 0;
