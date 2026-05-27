@@ -50,8 +50,6 @@ const stream = new Hono().get(
         return;
       }
 
-      const modelShort = stripProviderPrefix(defaults.voice.model_id);
-
       const canStream = supportsStreaming(
         defaults.voice.provider,
         defaults.voice.model_id,
@@ -60,7 +58,7 @@ const stream = new Hono().get(
       ws.send(
         JSON.stringify({
           type: "config",
-          model: modelShort,
+          model: stripProviderPrefix(defaults.voice.model_id),
           streaming: canStream,
         }),
       );
@@ -84,7 +82,7 @@ const stream = new Hono().get(
       upstream = openStreamingSession({
         providerId: defaults.voice.provider,
         apiKey,
-        model: modelShort,
+        model: defaults.voice.model_id,
         prompt,
         callbacks: {
           onReady: (model) => {

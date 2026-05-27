@@ -80,7 +80,7 @@ const transcribeRoute = new Hono().post("/", async (c) => {
       audio: audioData,
       model: defaults.voice.model_id,
       apiKey,
-      ...(language && language !== "auto" ? { language } : {}),
+      ...(language ? { language } : {}),
     });
     rawText = result.text;
     if (process.env.NODE_ENV !== "production") {
