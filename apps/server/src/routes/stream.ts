@@ -214,18 +214,29 @@ const stream = new Hono().get(
 
       onMessage(event, ws) {
         const data = event.data;
-        if (
+        const isBinary =
           data instanceof ArrayBuffer ||
-          (typeof Buffer !== "undefined" && Buffer.isBuffer(data))
-        ) {
-          const ab =
+          ArrayBuffer.isView(data) ||
+          (typeof Buffer !== "undefined" && Buffer.isBuffer(data));
+        if (!isBinary && typeof data !== "string") {
+          console.log(
+            `[stream] onMessage: unexpected data type=${typeof data}, constructor=${data?.constructor?.name}`,
+          );
+        }
+        if (isBinary) {
+          const buf =
             data instanceof ArrayBuffer
               ? data
-              : ((data as Buffer).buffer.slice(
-                  (data as Buffer).byteOffset,
-                  (data as Buffer).byteOffset + (data as Buffer).byteLength,
-                ) as ArrayBuffer);
-          upstream?.sendAudio(ab);
+              : ArrayBuffer.isView(data)
+                ? (data.buffer.slice(
+                    data.byteOffset,
+                    data.byteOffset + data.byteLength,
+                  ) as ArrayBuffer)
+                : ((data as Buffer).buffer.slice(
+                    (data as Buffer).byteOffset,
+                    (data as Buffer).byteOffset + (data as Buffer).byteLength,
+                  ) as ArrayBuffer);
+          upstream?.sendAudio(buf);
           return;
         }
 

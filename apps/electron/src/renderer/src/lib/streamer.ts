@@ -61,6 +61,7 @@ export class Streamer {
     this.pendingChunks = [];
     this.pcmChunks = [];
     this.pcmSampleCount = 0;
+    this.audioChunksSent = 0;
     this.sendJSON({ type: "start" });
 
     // Adopt the shared AudioContext when provided and still open.
@@ -116,6 +117,9 @@ export class Streamer {
     const audioDurationMs = Math.round(
       (this.pcmSampleCount / TARGET_RATE) * 1000,
     );
+    console.log(
+      `[streamer] commit: ${this.audioChunksSent} chunks sent, ${audioDurationMs}ms audio, pcmSamples=${this.pcmSampleCount}`,
+    );
     this.stopCapture();
     this.sendJSON({ type: "commit", audioDurationMs });
   }
@@ -163,11 +167,24 @@ export class Streamer {
     this.source = null;
   }
 
+  private audioChunksSent = 0;
+
   private sendAudio(chunk: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN && this.sessionReady) {
       this.ws.send(chunk);
+      this.audioChunksSent++;
+      if (this.audioChunksSent % 50 === 1) {
+        console.log(
+          `[streamer] sent ${this.audioChunksSent} audio chunks (${chunk.byteLength} bytes each), sessionReady=${this.sessionReady}`,
+        );
+      }
     } else {
       this.pendingChunks.push(chunk);
+      if (this.pendingChunks.length % 50 === 1) {
+        console.log(
+          `[streamer] queued ${this.pendingChunks.length} chunks (ws=${this.ws?.readyState}, sessionReady=${this.sessionReady})`,
+        );
+      }
     }
   }
 
