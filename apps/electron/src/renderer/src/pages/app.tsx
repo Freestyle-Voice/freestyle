@@ -521,9 +521,9 @@ export default function AppPage(): React.JSX.Element {
     setIsReRecording(false);
     playTone("stop");
 
-    // Tear down mic analyser but keep rAF alive
     clearInterval(timerRef.current);
     timerRef.current = 0;
+    setElapsed(0);
     try {
       audioSourceRef.current?.disconnect();
     } catch {}
@@ -532,6 +532,7 @@ export default function AppPage(): React.JSX.Element {
     } catch {}
     audioSourceRef.current = null;
     analyserNodeRef.current = null;
+    freqDataRef.current = null;
 
     const recordingDuration = Date.now() - startTimeRef.current;
     if (recordingDuration < 1000) {
@@ -765,6 +766,19 @@ export default function AppPage(): React.JSX.Element {
           .glow-transcribing { animation: glow-pulse-blue 1.5s ease-in-out infinite; }
           .glow-error { animation: glow-pulse-red 1.5s ease-in-out infinite; }
           .glow-idle { box-shadow: 0 0 6px 2px rgba(0,0,0,0.05); transition: box-shadow 300ms ease; }
+          @keyframes shimmer {
+            0% { background-position: 100% center; }
+            100% { background-position: 0% center; }
+          }
+          .shimmer-text {
+            font-style: italic;
+            background: linear-gradient(90deg, var(--muted-foreground) calc(50% - 40px), var(--foreground), var(--muted-foreground) calc(50% + 40px));
+            background-size: 250% 100%;
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            animation: shimmer 2s linear infinite;
+          }
           @keyframes fade-in {
             from { opacity: 0; }
             to { opacity: 1; }
@@ -807,7 +821,9 @@ export default function AppPage(): React.JSX.Element {
                   className="h-full w-full"
                 />
               </div>
-              {renderBars()}
+              <span style={pillTextStyle}>
+                <span className="shimmer-text">Transcribing...</span>
+              </span>
               {pendingCount > 0 && (
                 <span
                   className="mono"
