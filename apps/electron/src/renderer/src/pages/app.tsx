@@ -126,10 +126,18 @@ export default function AppPage(): React.JSX.Element {
   // `commitSessionRef` records the sessionId that the currently in-flight
   // commit belongs to.  It's set at the start of commitRecording and
   // checked after every await.
+  //
+  // `resolvePreviousTextRef` holds a Promise resolve function.  When a
+  // re-record commit needs the first result but it hasn't arrived yet,
+  // it awaits a promise.  The superseded commit resolves it when its
+  // fetch returns, delivering the text.
   const [isReRecording, setIsReRecording] = useState(false);
   const isReRecordingRef = useRef(false);
   const previousTextRef = useRef<string | null>(null);
   const commitSessionRef = useRef(0);
+  const resolvePreviousTextRef = useRef<((text: string | null) => void) | null>(
+    null,
+  );
 
   const recorderRef = useRef(new Recorder());
   const streamerRef = useRef<Streamer | null>(null);
@@ -175,7 +183,12 @@ export default function AppPage(): React.JSX.Element {
           // If the user is still recording a re-record, just store.
           if (wantsMicRef.current) {
             dbg("[onFinal] → user still recording, storing");
-            previousTextRef.current = text.trim() || null;
+            const stored = text.trim() || null;
+            previousTextRef.current = stored;
+            if (resolvePreviousTextRef.current) {
+              resolvePreviousTextRef.current(stored);
+              resolvePreviousTextRef.current = null;
+            }
             return;
           }
 
@@ -189,7 +202,12 @@ export default function AppPage(): React.JSX.Element {
             dbg(
               `[onFinal] → superseded (commit owns ${commitSessionRef.current}), storing`,
             );
-            previousTextRef.current = text.trim() || null;
+            const stored = text.trim() || null;
+            previousTextRef.current = stored;
+            if (resolvePreviousTextRef.current) {
+              resolvePreviousTextRef.current(stored);
+              resolvePreviousTextRef.current = null;
+            }
             return;
           }
 
@@ -342,6 +360,11 @@ export default function AppPage(): React.JSX.Element {
     sessionIdRef.current = 0;
     commitSessionRef.current = 0;
     previousTextRef.current = null;
+    // Wake up any waiting commit so it can exit cleanly
+    if (resolvePreviousTextRef.current) {
+      resolvePreviousTextRef.current(null);
+      resolvePreviousTextRef.current = null;
+    }
     window.api.hidePill();
   }, []);
 
@@ -473,7 +496,7 @@ export default function AppPage(): React.JSX.Element {
       return;
     }
 
-    const prevText = previousTextRef.current;
+    let prevText = previousTextRef.current;
     previousTextRef.current = null;
 
     // --- Streaming path ---
@@ -481,9 +504,27 @@ export default function AppPage(): React.JSX.Element {
       setState("transcribing");
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
+
+      // If the first result hasn't arrived yet, wait for it.
+      if (wasReRecording && !prevText) {
+        dbg("[commitRecording] streaming: waiting for first result...");
+        prevText = await new Promise<string | null>((resolve) => {
+          if (previousTextRef.current) {
+            const t = previousTextRef.current;
+            previousTextRef.current = null;
+            resolve(t);
+            return;
+          }
+          resolvePreviousTextRef.current = resolve;
+        });
+        dbg(
+          `[commitRecording] streaming: got first result, len=${prevText?.length ?? 0}`,
+        );
+        if (!isCurrentSession(mySession)) return;
+      }
+
       dbg(`[commitRecording] streaming commit, hasPrev=${!!prevText}`);
       streamerRef.current.commit(prevText ?? undefined);
-      // onFinal will handle paste/hide, using sessionId checks.
       return;
     }
 
@@ -513,6 +554,29 @@ export default function AppPage(): React.JSX.Element {
       recorderRef.current.cancel();
       recorderRef.current.releaseStream();
 
+      // If this is a re-record and the first result hasn't arrived yet,
+      // wait for the superseded commit to deliver it.
+      if (wasReRecording && !prevText) {
+        dbg("[commitRecording] REST: waiting for first result...");
+        prevText = await new Promise<string | null>((resolve) => {
+          // If the first result already landed while we were getting
+          // the WAV blob, grab it now.
+          if (previousTextRef.current) {
+            const t = previousTextRef.current;
+            previousTextRef.current = null;
+            resolve(t);
+            return;
+          }
+          resolvePreviousTextRef.current = resolve;
+        });
+        dbg(
+          `[commitRecording] REST: got first result, len=${prevText?.length ?? 0}`,
+        );
+
+        // Re-check session after the wait
+        if (!isCurrentSession(mySession)) return;
+      }
+
       const headers: Record<string, string> = {
         "Content-Type": "audio/wav",
         "x-audio-duration-ms": String(recordingDuration),
@@ -529,19 +593,21 @@ export default function AppPage(): React.JSX.Element {
 
       // ---- After async: check if we're still the active session ----
       if (!isCurrentSession(mySession)) {
-        // A newer session started while we were waiting for the API.
-        // Store our result for the newer session to combine with.
         dbg(
-          `[commitRecording] REST response arrived but superseded (my=${mySession}, current=${sessionIdRef.current})`,
+          `[commitRecording] superseded (my=${mySession}, cur=${sessionIdRef.current})`,
         );
+        let resultText: string | null = null;
         if (res.ok) {
           try {
             const data = await res.json();
-            const text = data.cleaned || data.raw || "";
-            if (text.trim()) {
-              previousTextRef.current = text.trim();
-            }
+            resultText = (data.cleaned || data.raw || "").trim() || null;
           } catch {}
+        }
+        // Store the result AND wake up the newer commit if it's waiting.
+        previousTextRef.current = resultText;
+        if (resolvePreviousTextRef.current) {
+          resolvePreviousTextRef.current(resultText);
+          resolvePreviousTextRef.current = null;
         }
         return;
       }
@@ -584,6 +650,10 @@ export default function AppPage(): React.JSX.Element {
     isReRecordingRef.current = false;
     setIsReRecording(false);
     previousTextRef.current = null;
+    if (resolvePreviousTextRef.current) {
+      resolvePreviousTextRef.current(null);
+      resolvePreviousTextRef.current = null;
+    }
     stopVisualization();
     streamerRef.current?.cancel();
     recorderRef.current.cancel();
