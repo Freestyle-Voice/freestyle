@@ -187,7 +187,8 @@ export default function AppPage(): React.JSX.Element {
       return;
     }
 
-    // All results are in and user is not recording.  Stitch and paste.
+    // All results are in and user is not recording.  Stitch and
+    // post-process as one cohesive piece.
     const nonEmpty = results.filter((t) => t.trim());
     if (nonEmpty.length === 0) {
       drainingRef.current = false;
@@ -195,36 +196,32 @@ export default function AppPage(): React.JSX.Element {
       return;
     }
 
+    const combined = nonEmpty.join(" ");
+    dbg(
+      `[drainQueue] post-processing ${nonEmpty.length} result(s) via /api/post-process`,
+    );
     let finalText: string;
-    if (nonEmpty.length === 1) {
-      finalText = nonEmpty[0];
-    } else {
-      const combined = nonEmpty.join(" ");
-      dbg(
-        `[drainQueue] stitching ${nonEmpty.length} results via /api/post-process`,
-      );
-      try {
-        const res = await fetch(`${getApiBase()}/api/post-process`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: combined,
-            appContext: appContextRef.current,
-          }),
-        });
-        if (cancelledRef.current) {
-          drainingRef.current = false;
-          return;
-        }
-        if (res.ok) {
-          const data = await res.json();
-          finalText = data.cleaned || combined;
-        } else {
-          finalText = combined;
-        }
-      } catch {
+    try {
+      const res = await fetch(`${getApiBase()}/api/post-process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: combined,
+          appContext: appContextRef.current,
+        }),
+      });
+      if (cancelledRef.current) {
+        drainingRef.current = false;
+        return;
+      }
+      if (res.ok) {
+        const data = await res.json();
+        finalText = data.cleaned || combined;
+      } else {
         finalText = combined;
       }
+    } catch {
+      finalText = combined;
     }
 
     if (cancelledRef.current) {
@@ -527,6 +524,10 @@ export default function AppPage(): React.JSX.Element {
     };
     if (appContextRef.current) headers["x-app-context"] = appContextRef.current;
 
+    // Always grab raw transcription text.  Post-processing is done
+    // once on the combined result in drainQueue — this avoids
+    // individual LLM cleanup that would hide corrections like
+    // "scratch that" from the final post-processing pass.
     const transcribePromise = fetch(`${getApiBase()}/api/transcribe`, {
       method: "POST",
       body: wavBlob,
@@ -535,7 +536,7 @@ export default function AppPage(): React.JSX.Element {
       .then(async (res) => {
         if (!res.ok) return "";
         const data = await res.json();
-        return (data.cleaned || data.raw || "").trim();
+        return (data.raw || "").trim();
       })
       .catch(() => "");
 
