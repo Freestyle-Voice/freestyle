@@ -15,6 +15,15 @@ const ELEVENLABS_STT_URL = "wss://api.elevenlabs.io/v1/speech-to-text/realtime";
 const ELEVENLABS_TOKEN_URL =
   "https://api.elevenlabs.io/v1/single-use-token/realtime_scribe";
 
+function audioChunkMessage(b64: string, commit: boolean): string {
+  return JSON.stringify({
+    message_type: "input_audio_chunk",
+    audio_base_64: b64,
+    commit,
+    sample_rate: 16000,
+  });
+}
+
 async function getSingleUseToken(apiKey: string): Promise<string> {
   const res = await fetch(ELEVENLABS_TOKEN_URL, {
     method: "POST",
@@ -63,14 +72,8 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
 
         ws.on("open", () => {
           for (const chunk of pendingChunks) {
-            const b64 = Buffer.from(chunk).toString("base64");
             ws!.send(
-              JSON.stringify({
-                message_type: "input_audio_chunk",
-                audio_base_64: b64,
-                commit: false,
-                sample_rate: 16000,
-              }),
+              audioChunkMessage(Buffer.from(chunk).toString("base64"), false),
             );
           }
           pendingChunks.length = 0;
@@ -132,26 +135,13 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
           pendingChunks.push(chunk);
           return;
         }
-        const b64 = Buffer.from(chunk).toString("base64");
         ws.send(
-          JSON.stringify({
-            message_type: "input_audio_chunk",
-            audio_base_64: b64,
-            commit: false,
-            sample_rate: 16000,
-          }),
+          audioChunkMessage(Buffer.from(chunk).toString("base64"), false),
         );
       },
       commit(): void {
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        ws.send(
-          JSON.stringify({
-            message_type: "input_audio_chunk",
-            audio_base_64: "",
-            commit: true,
-            sample_rate: 16000,
-          }),
-        );
+        ws.send(audioChunkMessage("", true));
       },
       cancel(): void {
         pendingChunks.length = 0;
