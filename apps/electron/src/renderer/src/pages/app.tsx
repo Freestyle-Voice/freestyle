@@ -140,7 +140,6 @@ export default function AppPage(): React.JSX.Element {
   // needed, then pastes.  No session-id coordination required.
   const queueRef = useRef<QueueEntry[]>([]);
   const drainingRef = useRef(false);
-  const cancelledRef = useRef(false);
 
   const getInputVolume = useCallback(() => volumeRef.current, []);
 
@@ -152,44 +151,35 @@ export default function AppPage(): React.JSX.Element {
     if (drainingRef.current) return;
     drainingRef.current = true;
 
-    // Wait until the user finishes recording.  Each commitRecording
-    // calls drainQueue again after pushing, so if we're already
-    // draining we just return (the loop will pick up new entries).
-    while (wantsMicRef.current && !cancelledRef.current) {
+    while (wantsMicRef.current && pillActiveRef.current) {
       await new Promise((r) => setTimeout(r, 100));
     }
 
-    if (cancelledRef.current || queueRef.current.length === 0) {
+    if (!pillActiveRef.current || queueRef.current.length === 0) {
       drainingRef.current = false;
       return;
     }
 
-    // Take everything in the queue.
     const batch = [...queueRef.current];
     queueRef.current = [];
 
     dbg(`[drainQueue] waiting for ${batch.length} result(s)`);
     const results = await Promise.all(batch.map((e) => e.promise));
 
-    if (cancelledRef.current) {
+    if (!pillActiveRef.current) {
       drainingRef.current = false;
       return;
     }
 
-    // If the user started recording again while we were awaiting,
-    // put results back and loop.
     if (wantsMicRef.current || queueRef.current.length > 0) {
       const resolved = results
         .filter((t) => t.trim())
         .map((t) => ({ promise: Promise.resolve(t) }));
       queueRef.current = [...resolved, ...queueRef.current];
       drainingRef.current = false;
-      // The next commitRecording will call drainQueue again.
       return;
     }
 
-    // All results are in and user is not recording.  Stitch and
-    // post-process as one cohesive piece.
     const nonEmpty = results.filter((t) => t.trim());
     if (nonEmpty.length === 0) {
       drainingRef.current = false;
@@ -211,7 +201,7 @@ export default function AppPage(): React.JSX.Element {
           appContext: appContextRef.current,
         }),
       });
-      if (cancelledRef.current) {
+      if (!pillActiveRef.current) {
         drainingRef.current = false;
         return;
       }
@@ -225,13 +215,11 @@ export default function AppPage(): React.JSX.Element {
       finalText = combined;
     }
 
-    if (cancelledRef.current) {
+    if (!pillActiveRef.current) {
       drainingRef.current = false;
       return;
     }
 
-    // If the user started ANOTHER recording while we were post-
-    // processing, stash the result and let the next drain combine it.
     if (wantsMicRef.current || queueRef.current.length > 0) {
       queueRef.current = [
         { promise: Promise.resolve(finalText) },
@@ -247,11 +235,10 @@ export default function AppPage(): React.JSX.Element {
 
     drainingRef.current = false;
 
-    // Final check: if user started recording during paste, don't hide.
     if (
       !wantsMicRef.current &&
       queueRef.current.length === 0 &&
-      !cancelledRef.current
+      pillActiveRef.current
     ) {
       dbg("[drainQueue] done, hiding pill");
       hidePill();
@@ -383,7 +370,6 @@ export default function AppPage(): React.JSX.Element {
     setPendingCount(0);
     wantsMicRef.current = false;
     pillActiveRef.current = false;
-    cancelledRef.current = false;
     queueRef.current = [];
     drainingRef.current = false;
     window.api.hidePill();
@@ -401,7 +387,6 @@ export default function AppPage(): React.JSX.Element {
       }
       wantsMicRef.current = true;
       pillActiveRef.current = true;
-      cancelledRef.current = false;
       pendingCommitRef.current = false;
       setMessage("");
       setPartialText("");
@@ -518,8 +503,14 @@ export default function AppPage(): React.JSX.Element {
     recorderRef.current.cancel();
     recorderRef.current.releaseStream();
 
+    // If cancel/hide fired while we were getting the blob, bail out.
+    if (!pillActiveRef.current) {
+      dbg("[commitRecording] pill no longer active, bailing");
+      return;
+    }
+
     if (!wavBlob) {
-      if (queueRef.current.length === 0) hidePill();
+      if (queueRef.current.length === 0 && !drainingRef.current) hidePill();
       return;
     }
 
@@ -555,7 +546,6 @@ export default function AppPage(): React.JSX.Element {
   // ---- Cancel ----
   const cancelRecording = useCallback(() => {
     dbg("[cancelRecording]");
-    cancelledRef.current = true;
     wantsMicRef.current = false;
     pillActiveRef.current = false;
     isReRecordingRef.current = false;
