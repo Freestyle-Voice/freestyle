@@ -41,7 +41,7 @@ import { pasteIntoFocusedApp } from "./paste";
 
 const DEFAULT_PORT = 4649;
 const APP_WIDTH = 396;
-const APP_HEIGHT = 100;
+const APP_HEIGHT = 76;
 const APP_BOTTOM_MARGIN = 0;
 
 // ---------------------------------------------------------------------------
@@ -146,21 +146,22 @@ function getAppWindowPosition(): { x: number; y: number } {
   // Read pill position preference
   const position = (readSettings().pillPosition as string) || "bottom-center";
 
-  const margin = 10;
+  const sideMargin = 10;
+  const edgeMargin = 4;
   switch (position) {
     case "top-center":
-      return { x: Math.round((width - APP_WIDTH) / 2), y: margin };
+      return { x: Math.round((width - APP_WIDTH) / 2), y: edgeMargin };
     case "top-right":
-      return { x: width - APP_WIDTH - margin, y: margin };
+      return { x: width - APP_WIDTH - sideMargin, y: edgeMargin };
     case "bottom-right":
       return {
-        x: width - APP_WIDTH - margin,
-        y: height - APP_HEIGHT - margin,
+        x: width - APP_WIDTH - sideMargin,
+        y: height - APP_HEIGHT - edgeMargin,
       };
     default:
       return {
         x: Math.round((width - APP_WIDTH) / 2),
-        y: height - APP_HEIGHT - APP_BOTTOM_MARGIN,
+        y: height - APP_HEIGHT - edgeMargin,
       };
   }
 }
