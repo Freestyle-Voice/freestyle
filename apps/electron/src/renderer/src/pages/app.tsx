@@ -763,9 +763,9 @@ export default function AppPage(): React.JSX.Element {
 
   return (
     <div
-      className={`flex h-screen w-screen items-end select-none ${
-        pillSide === "right" ? "justify-end pr-3" : "justify-center"
-      }`}
+      className={`flex h-screen w-screen select-none ${
+        pillAlign === "start" ? "items-start" : "items-end"
+      } ${pillSide === "right" ? "justify-end pr-3" : "justify-center"}`}
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <style>
@@ -826,16 +826,18 @@ export default function AppPage(): React.JSX.Element {
         style={{
           position: "relative",
           marginBottom: pillAlign === "end" ? 8 : "auto",
-          marginTop: pillAlign === "start" ? 22 : "auto",
+          marginTop: pillAlign === "start" ? 8 : "auto",
         }}
       >
         {isReRecording && (
           <div
-            className="stack-enter-up"
+            className={
+              pillAlign === "end" ? "stack-enter-up" : "stack-enter-down"
+            }
             style={{
               borderRadius: 25,
               position: "absolute",
-              top: -18,
+              ...(pillAlign === "end" ? { top: -18 } : { bottom: -18 }),
               left: "50%",
               transform: "translateX(-50%) scale(0.87)",
               opacity: 0.95,
