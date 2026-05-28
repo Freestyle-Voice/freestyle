@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { isServerBinaryAvailable } from "../../whisper/binary.js";
 import { WHISPER_PROVIDER_ID } from "../../whisper/constants.js";
 import { getDownloadedModelPath } from "../../whisper/models.js";
 import { ensureServerRunning, getServerPort } from "../../whisper/server.js";
@@ -27,6 +28,7 @@ export class WhisperLocalTranscriptionProvider
   }
 
   supportsStreaming(modelId: string): boolean {
+    if (!isServerBinaryAvailable()) return false;
     const id = stripProviderPrefix(modelId);
     return getDownloadedModelPath(id) !== null;
   }
@@ -53,8 +55,8 @@ export class WhisperLocalTranscriptionProvider
         }
       })
       .catch((err) => {
+        if (closed) return;
         callbacks.onError(err instanceof Error ? err.message : String(err));
-        callbacks.onClose();
       });
 
     async function doInference(): Promise<void> {

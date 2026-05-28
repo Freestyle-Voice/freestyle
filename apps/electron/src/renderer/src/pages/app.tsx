@@ -265,6 +265,13 @@ export default function AppPage(): React.JSX.Element {
         onCleaned: () => {},
         onError: (msg) => {
           if (!pillActiveRef.current) return;
+          // If we're waiting for a streaming result, resolve with empty
+          // so the app doesn't stay stuck in "transcribing"
+          const resolver = streamResolverRef.current;
+          if (resolver) {
+            streamResolverRef.current = null;
+            resolver({ raw: "", cleaned: "" });
+          }
           if (wantsMicRef.current) return;
           setState("error");
           setMessage(msg);
