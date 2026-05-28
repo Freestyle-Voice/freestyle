@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "freestyle-app",
+    "name": "Freestyle",
     "slug": "freestyle-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +8,11 @@
     "scheme": "freestyleapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.freestyle.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Freestyle needs microphone access to transcribe your voice."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,6 +21,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "permissions": ["RECORD_AUDIO"],
+      "package": "com.freestyle.app",
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -34,7 +40,15 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Freestyle needs microphone access to transcribe your voice."
+        }
+      ],
+      "expo-secure-store",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
