@@ -12,7 +12,6 @@ Sentry.init({
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import server from "@freestyle/server";
@@ -38,7 +37,7 @@ import icon from "../../resources/icon.png?asset";
 import trayIconPath from "../../resources/tray/logoTemplate.png?asset";
 import { NativeKeyListener } from "./key-listener";
 import { MicListener } from "./mic-listener";
-import { getLastPasteTiming, pasteIntoFocusedApp } from "./paste";
+import { pasteIntoFocusedApp } from "./paste";
 
 const DEFAULT_PORT = 4649;
 const APP_WIDTH = 440;
@@ -89,7 +88,6 @@ let settingsWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let keyListener: NativeKeyListener | null = null;
 let hotkeyPressed = false;
-let hotkeyDownTimestamp = 0;
 let winToggleActive = false;
 let currentHotkeyAccel: string | null = null;
 let micListener: MicListener | null = null;
@@ -647,12 +645,6 @@ app.whenReady().then(async () => {
     await pasteIntoFocusedApp(text);
   });
 
-  // IPC: query the timing breakdown of the last paste operation.
-  // Returns null if no paste has been performed yet.
-  ipcMain.handle("perf:last-paste", () => {
-    return getLastPasteTiming();
-  });
-
   // IPC: hide the pill window on request from renderer
   ipcMain.on("pill:hide", () => {
     hidePill();
@@ -1000,24 +992,16 @@ function registerHotkey(hotkey?: string): void {
     onKeyDown: () => {
       if (!hotkeyPressed) {
         hotkeyPressed = true;
-        hotkeyDownTimestamp = performance.now();
         showPill();
         mainWindow?.webContents.send("hotkey:down");
         settingsWindow?.webContents.send("hotkey:down");
-        if (process.env.NODE_ENV !== "production") {
-          console.log("[hotkey] DOWN (native binary)");
-        }
       }
     },
     onKeyUp: () => {
       if (hotkeyPressed) {
         hotkeyPressed = false;
-        const holdMs = Math.round(performance.now() - hotkeyDownTimestamp);
         mainWindow?.webContents.send("hotkey:up");
         settingsWindow?.webContents.send("hotkey:up");
-        if (process.env.NODE_ENV !== "production") {
-          console.log(`[hotkey] UP (native binary) | held: ${holdMs}ms`);
-        }
       }
     },
     onError: (error) => {

@@ -63,17 +63,6 @@ declare global {
       onMicActivityChanged: (
         callback: (state: "active" | "inactive" | "unknown") => void,
       ) => () => void;
-      // Performance: timing breakdown of last paste operation
-      getLastPasteTiming: () => Promise<{
-        clipboardWriteMs: number;
-        clipboardVerifyMs: number;
-        keystrokeInjectMs: number;
-        settleMs: number;
-        clipboardRestoreMs: number;
-        totalMs: number;
-        method: "native" | "legacy";
-        platform: string;
-      } | null>;
     };
   }
 }

@@ -1,26 +1,6 @@
 import { exec, execFile } from "node:child_process";
-import { performance } from "node:perf_hooks";
 import { clipboard } from "electron";
 import { getNativeBinaryPath } from "./native-binary";
-
-/** Timing breakdown for the most recent paste operation */
-export interface PasteTiming {
-  clipboardWriteMs: number;
-  clipboardVerifyMs: number;
-  keystrokeInjectMs: number;
-  settleMs: number;
-  clipboardRestoreMs: number;
-  totalMs: number;
-  method: "native" | "legacy";
-  platform: string;
-}
-
-let lastPasteTiming: PasteTiming | null = null;
-
-/** Returns the timing breakdown of the most recent paste, or null if none. */
-export function getLastPasteTiming(): PasteTiming | null {
-  return lastPasteTiming;
-}
 
 function execAsync(cmd: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -117,6 +97,10 @@ async function pasteLinuxLegacy(): Promise<void> {
   }
 }
 
+// Native binaries inject keystrokes directly at the OS level, so the target
+// app receives them much faster than shell-spawned commands. Settle times
+// are reduced accordingly. If using the legacy fallback, the original higher
+// values are used.
 const PASTE_SETTLE_MS: Record<string, number> = {
   darwin: 150,
   win32: 150,
@@ -130,27 +114,35 @@ const PASTE_SETTLE_LEGACY_MS: Record<string, number> = {
 };
 
 export async function pasteIntoFocusedApp(text: string): Promise<void> {
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[paste] text:", JSON.stringify(text));
+  }
   if (!text?.trim()) return;
 
-  const t0 = performance.now();
+  // Detect if we have native binaries for faster settle times
+  const hasNative =
+    (process.platform === "darwin" &&
+      getNativeBinaryPath("macos-fast-paste") !== null) ||
+    (process.platform === "win32" &&
+      getNativeBinaryPath("windows-fast-paste") !== null) ||
+    (process.platform === "linux" &&
+      getNativeBinaryPath("linux-fast-paste") !== null);
 
-  // 1. Clipboard write
   const prior = clipboard.readText();
   clipboard.writeText(text);
-  const tClipWrite = performance.now();
 
-  // 2. Clipboard verify
+  // Verify the clipboard write actually took effect before pasting.
+  // Electron's clipboard API is synchronous on the main thread, but a
+  // short spin-wait guards against external clipboard managers that may
+  // overwrite the value immediately after our write.
   for (let i = 0; i < 5; i++) {
     if (clipboard.readText() === text) break;
     await new Promise((r) => setTimeout(r, 10));
     clipboard.writeText(text);
   }
-  const tClipVerify = performance.now();
-
-  let method: "native" | "legacy" = "legacy";
 
   try {
-    // 3. Keystroke injection
+    let method: "native" | "legacy" = "legacy";
     switch (process.platform) {
       case "darwin":
         method = await pasteMac();
@@ -162,47 +154,12 @@ export async function pasteIntoFocusedApp(text: string): Promise<void> {
         method = await pasteLinux();
         break;
     }
-    const tKeystroke = performance.now();
 
-    // 4. Settle wait
     const settleTable =
       method === "native" ? PASTE_SETTLE_MS : PASTE_SETTLE_LEGACY_MS;
     const settleMs = settleTable[process.platform] ?? 500;
     await new Promise((r) => setTimeout(r, settleMs));
-    const tSettle = performance.now();
-
-    // 5. Clipboard restore
+  } finally {
     clipboard.writeText(prior);
-    const tRestore = performance.now();
-
-    // Record timing breakdown
-    lastPasteTiming = {
-      clipboardWriteMs: round(tClipWrite - t0),
-      clipboardVerifyMs: round(tClipVerify - tClipWrite),
-      keystrokeInjectMs: round(tKeystroke - tClipVerify),
-      settleMs: round(tSettle - tKeystroke),
-      clipboardRestoreMs: round(tRestore - tSettle),
-      totalMs: round(tRestore - t0),
-      method,
-      platform: process.platform,
-    };
-
-    // Log timing in dev mode
-    if (process.env.NODE_ENV !== "production") {
-      const t = lastPasteTiming;
-      console.log(
-        `[paste] ${t.method} | total: ${t.totalMs}ms | ` +
-          `write: ${t.clipboardWriteMs}ms, verify: ${t.clipboardVerifyMs}ms, ` +
-          `inject: ${t.keystrokeInjectMs}ms, settle: ${t.settleMs}ms, ` +
-          `restore: ${t.clipboardRestoreMs}ms`,
-      );
-    }
-  } catch (err) {
-    clipboard.writeText(prior);
-    throw err;
   }
-}
-
-function round(n: number): number {
-  return Math.round(n * 100) / 100;
 }
