@@ -919,6 +919,8 @@ app.whenReady().then(async () => {
 
   ipcMain.on("settings:set-pill-position", (_event, position: string) => {
     writeSettings({ pillPosition: position });
+    // Notify the pill window so it can update alignment/stack direction
+    mainWindow?.webContents.send("settings:pill-position-changed", position);
   });
 
   // Register hold-to-record hotkey via native platform binary

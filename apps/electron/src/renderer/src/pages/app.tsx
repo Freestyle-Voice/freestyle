@@ -638,6 +638,13 @@ export default function AppPage(): React.JSX.Element {
   }, [stopVisualization, hidePill]);
 
   // ---- Preferences ----
+  const applyPillPosition = useCallback((pos: string | null | undefined) => {
+    if (pos?.startsWith("top")) setPillAlign("start");
+    else if (pos?.startsWith("bottom") || !pos) setPillAlign("end");
+    else setPillAlign("center");
+    setPillSide(pos?.endsWith("right") ? "right" : "center");
+  }, []);
+
   useEffect(() => {
     getClient()
       .api.settings[":key"].$get({ param: { key: "sound_enabled" } })
@@ -648,14 +655,13 @@ export default function AppPage(): React.JSX.Element {
       .catch(() => {});
     window.api
       ?.getPillPosition()
-      .then((pos) => {
-        if (pos?.startsWith("top")) setPillAlign("start");
-        else if (pos?.startsWith("bottom") || !pos) setPillAlign("end");
-        else setPillAlign("center");
-        setPillSide(pos?.endsWith("right") ? "right" : "center");
-      })
+      .then(applyPillPosition)
       .catch(() => {});
-  }, []);
+
+    // Listen for live position changes from the settings UI
+    const remove = window.api?.onPillPositionChanged(applyPillPosition);
+    return () => remove?.();
+  }, [applyPillPosition]);
 
   const stateRef = useRef(state);
   stateRef.current = state;
