@@ -41,7 +41,7 @@ import { pasteIntoFocusedApp } from "./paste";
 
 const DEFAULT_PORT = 4649;
 const APP_WIDTH = 396;
-const APP_HEIGHT = 64;
+const APP_HEIGHT = 80;
 const APP_BOTTOM_MARGIN = 0;
 
 // ---------------------------------------------------------------------------
@@ -146,27 +146,34 @@ function getAppWindowPosition(): { x: number; y: number } {
   // Read pill position preference
   const position = (readSettings().pillPosition as string) || "bottom-center";
 
-  // The pill (216px) is centered inside the window (396px), so there's
-  // ~90px of transparent padding on each side. Offset right-side positions
-  // so the pill visually aligns near the screen edge.
-  const pillInset = Math.round((APP_WIDTH - 216) / 2); // ~90px
-  const rightMargin = 16 - pillInset; // net ~-74px, pulls window right
-  const bottomMargin = -4; // push window closer to screen edge
-  const topMargin = -4;
+  // The pill (216px) is centered within the window (396px), leaving
+  // ~90px of transparent space on each side. For right-side positions,
+  // place the window so the pill's right edge sits 16px from the screen
+  // edge — but keep the window fully on-screen to avoid OS clamping.
+  const pillHalf = Math.round((APP_WIDTH - 216) / 2); // ~90px transparent padding
+  const rightEdgeGap = 16; // desired gap between pill right edge and screen edge
+  // x so that pill right edge = width - rightEdgeGap:
+  //   pillRight = x + APP_WIDTH/2 + 216/2 = x + 198 + 108 = x + 306
+  //   x + 306 = width - rightEdgeGap  =>  x = width - 306 - rightEdgeGap
+  // But ensure x + APP_WIDTH <= width (window stays on screen)
+  const xRight = Math.min(
+    width - APP_WIDTH,
+    width - rightEdgeGap - pillHalf - 216,
+  );
   switch (position) {
     case "top-center":
-      return { x: Math.round((width - APP_WIDTH) / 2), y: topMargin };
+      return { x: Math.round((width - APP_WIDTH) / 2), y: 0 };
     case "top-right":
-      return { x: width - APP_WIDTH - rightMargin, y: topMargin };
+      return { x: xRight, y: 0 };
     case "bottom-right":
       return {
-        x: width - APP_WIDTH - rightMargin,
-        y: height - APP_HEIGHT - bottomMargin,
+        x: xRight,
+        y: height - APP_HEIGHT,
       };
     default:
       return {
         x: Math.round((width - APP_WIDTH) / 2),
-        y: height - APP_HEIGHT - bottomMargin,
+        y: height - APP_HEIGHT,
       };
   }
 }
