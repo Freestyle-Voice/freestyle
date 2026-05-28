@@ -45,7 +45,10 @@ export function Orb({
         gl={{
           alpha: true,
           antialias: true,
-          premultipliedAlpha: true,
+          premultipliedAlpha: false,
+        }}
+        onCreated={({ gl: renderer }) => {
+          renderer.setClearColor(0x000000, 0);
         }}
       >
         <Scene
@@ -421,8 +424,9 @@ void main() {
     float noise = flow(decomposed, radius * 0.03 - uAnimation * 0.2) - 0.5;
     theta += noise * mix(0.08, 0.25, uOutputVolume);
 
-    // Initialize the base color to white
+    // Initialize the base color to white with zero coverage
     vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
+    float blobCoverage = 0.0; // Tracks how much blob content covers this pixel
 
     // Original parameters for the ovals in polar coordinates
     float originalCenters[7] = float[7](0.0, 0.5 * PI, 1.0 * PI, 1.5 * PI, 2.0 * PI, 2.5 * PI, 3.0 * PI);
@@ -460,6 +464,7 @@ void main() {
             // Blend the oval color with the existing color
             color.rgb = mix(color.rgb, ovalColor.rgb, ovalColor.a);
             color.a = max(color.a, ovalColor.a); // Max alpha
+            blobCoverage = max(blobCoverage, ovalColor.a);
         }
     }
 
@@ -483,6 +488,9 @@ void main() {
     vec3 ringColor = vec3(1.0); // White ring color
     color.rgb = 1.0 - (1.0 - color.rgb) * (1.0 - ringColor * totalRingAlpha);
 
+    // Compute content alpha from blob and ring coverage
+    float contentAlpha = max(blobCoverage, totalRingAlpha);
+
     // Define colours to ramp against greyscale
     vec3 color1 = uBgColor;    // Background (matches --card)
     vec3 color2 = uColor1;     // Darker accent
@@ -493,8 +501,9 @@ void main() {
     float luminance = mix(color.r, 1.0 - color.r, uInverted);
     color.rgb = colorRamp(luminance, color1, color2, color3, color4);
 
-    // Apply fade-in opacity
-    color.a *= uOpacity;
+    // Areas with no blob/ring content become transparent so the
+    // pill's --card background shows through naturally
+    color.a = contentAlpha * uOpacity;
 
     gl_FragColor = color;
 }
