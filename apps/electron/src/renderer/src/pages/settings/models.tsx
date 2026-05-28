@@ -23,7 +23,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
 // ---------------------------------------------------------------------------
@@ -138,6 +138,10 @@ export default function ModelsPage(): React.JSX.Element {
   const [localLlmModelDropdownOpen, setLocalLlmModelDropdownOpen] =
     useState(false);
 
+  const voiceDropdownRef = useRef<HTMLDivElement>(null);
+  const llmDropdownRef = useRef<HTMLDivElement>(null);
+  const localLlmModelDropdownRef = useRef<HTMLDivElement>(null);
+
   // API Key dialog form
   const apiKeyForm = useForm<ApiKeyInput>({
     resolver: zodResolver(apiKeySchema),
@@ -202,6 +206,29 @@ export default function ModelsPage(): React.JSX.Element {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!voiceDropdownOpen && !llmDropdownOpen && !localLlmModelDropdownOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        voiceDropdownRef.current?.contains(target) ||
+        llmDropdownRef.current?.contains(target) ||
+        localLlmModelDropdownRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setVoiceDropdownOpen(false);
+      setLlmDropdownOpen(false);
+      setLocalLlmModelDropdownOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [voiceDropdownOpen, llmDropdownOpen, localLlmModelDropdownOpen]);
 
   // -------------------------------------------------------------------------
   // Derived state
@@ -450,7 +477,7 @@ export default function ModelsPage(): React.JSX.Element {
 
               return (
                 <div key={providerId}>
-                  <div className="text-muted-foreground bg-secondary/50 sticky top-0 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider">
+                  <div className="text-muted-foreground border-border bg-card sticky top-0 z-10 border-b px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider">
                     {providerName}
                     {!keyProviders.has(providerId) && (
                       <span className="text-destructive ml-1.5 normal-case tracking-normal">
@@ -531,7 +558,7 @@ export default function ModelsPage(): React.JSX.Element {
           </div>
         )}
 
-        <div className="relative">
+        <div className="relative" ref={voiceDropdownRef}>
           <button
             type="button"
             onClick={() => {
@@ -822,7 +849,7 @@ export default function ModelsPage(): React.JSX.Element {
 
                 {/* Local model dropdown */}
                 {localLlmModels.length > 0 && (
-                  <div className="relative">
+                  <div className="relative" ref={localLlmModelDropdownRef}>
                     <button
                       type="button"
                       onClick={() =>
@@ -898,7 +925,7 @@ export default function ModelsPage(): React.JSX.Element {
                     Select a cloud model below to switch from local.
                   </div>
                 )}
-                <div className="relative">
+                <div className="relative" ref={llmDropdownRef}>
                   <button
                     type="button"
                     onClick={() => {
