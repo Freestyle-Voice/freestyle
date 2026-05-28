@@ -143,6 +143,17 @@ const api = {
     ipcRenderer.on("mic:activity-changed", handler);
     return () => ipcRenderer.removeListener("mic:activity-changed", handler);
   },
+  // Performance: query timing of the last paste operation
+  getLastPasteTiming: (): Promise<{
+    clipboardWriteMs: number;
+    clipboardVerifyMs: number;
+    keystrokeInjectMs: number;
+    settleMs: number;
+    clipboardRestoreMs: number;
+    totalMs: number;
+    method: "native" | "legacy";
+    platform: string;
+  } | null> => ipcRenderer.invoke("perf:last-paste"),
 };
 
 // Use `contextBridge` APIs to expose Electron APIs to

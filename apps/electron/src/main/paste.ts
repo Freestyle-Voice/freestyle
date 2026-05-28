@@ -1,6 +1,26 @@
 import { exec, execFile } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import { clipboard } from "electron";
 import { getNativeBinaryPath } from "./native-binary";
+
+/** Timing breakdown for the most recent paste operation */
+export interface PasteTiming {
+  clipboardWriteMs: number;
+  clipboardVerifyMs: number;
+  keystrokeInjectMs: number;
+  settleMs: number;
+  clipboardRestoreMs: number;
+  totalMs: number;
+  method: "native" | "legacy";
+  platform: string;
+}
+
+let lastPasteTiming: PasteTiming | null = null;
+
+/** Returns the timing breakdown of the most recent paste, or null if none. */
+export function getLastPasteTiming(): PasteTiming | null {
+  return lastPasteTiming;
+}
 
 function execAsync(cmd: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -12,7 +32,6 @@ function execFileAsync(path: string, args: string[] = []): Promise<number> {
   return new Promise((resolve, reject) => {
     execFile(path, args, (err) => {
       if (err) {
-        // Node's ExecFileException stores exit code in .code (number) or .status
         const exitCode =
           typeof (err as { status?: unknown }).status === "number"
             ? (err as { status: number }).status
@@ -31,66 +50,63 @@ function execFileAsync(path: string, args: string[] = []): Promise<number> {
   });
 }
 
-async function pasteMac(): Promise<void> {
+async function pasteMac(): Promise<"native" | "legacy"> {
   const binaryPath = getNativeBinaryPath("macos-fast-paste");
   if (binaryPath) {
     const exitCode = await execFileAsync(binaryPath);
     if (exitCode === 2) {
-      // No accessibility permission -- fall back to osascript
-      // (which also needs it, but gives a better system prompt)
       console.warn(
         "[paste] No accessibility permission (native binary exit 2), falling back to osascript",
       );
       await execAsync(
         `osascript -e 'tell application "System Events" to keystroke "v" using {command down}'`,
       );
+      return "legacy";
     } else if (exitCode !== 0) {
       throw new Error(`macos-fast-paste exited with code ${exitCode}`);
     }
-  } else {
-    // Fallback: legacy osascript approach
-    await execAsync(
-      `osascript -e 'tell application "System Events" to keystroke "v" using {command down}'`,
-    );
+    return "native";
   }
+  await execAsync(
+    `osascript -e 'tell application "System Events" to keystroke "v" using {command down}'`,
+  );
+  return "legacy";
 }
 
-async function pasteWindows(): Promise<void> {
+async function pasteWindows(): Promise<"native" | "legacy"> {
   const binaryPath = getNativeBinaryPath("windows-fast-paste");
   if (binaryPath) {
     const exitCode = await execFileAsync(binaryPath);
     if (exitCode !== 0) {
       throw new Error(`windows-fast-paste exited with code ${exitCode}`);
     }
-  } else {
-    // Fallback: legacy PowerShell approach
-    await execAsync(
-      `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')"`,
-    );
+    return "native";
   }
+  await execAsync(
+    `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')"`,
+  );
+  return "legacy";
 }
 
-async function pasteLinux(): Promise<void> {
+async function pasteLinux(): Promise<"native" | "legacy"> {
   const binaryPath = getNativeBinaryPath("linux-fast-paste");
   if (binaryPath) {
     const args: string[] = [];
-
-    // Use portal mode on Wayland for native support
     if (process.env.XDG_SESSION_TYPE === "wayland") {
       args.push("--portal");
     }
-
     const exitCode = await execFileAsync(binaryPath, args);
     if (exitCode !== 0) {
-      // Fallback to legacy xdotool/wtype approach
       console.warn(
         `[paste] Native paste failed (exit ${exitCode}), falling back to xdotool/wtype`,
       );
       await pasteLinuxLegacy();
+      return "legacy";
     }
-  } else {
-    await pasteLinuxLegacy();
+    return "native";
   }
+  await pasteLinuxLegacy();
+  return "legacy";
 }
 
 async function pasteLinuxLegacy(): Promise<void> {
@@ -101,10 +117,6 @@ async function pasteLinuxLegacy(): Promise<void> {
   }
 }
 
-// Native binaries inject keystrokes directly at the OS level, so the target
-// app receives them much faster than shell-spawned commands. Settle times
-// are reduced accordingly. If using the legacy fallback, the original higher
-// values are used.
 const PASTE_SETTLE_MS: Record<string, number> = {
   darwin: 150,
   win32: 150,
@@ -118,50 +130,79 @@ const PASTE_SETTLE_LEGACY_MS: Record<string, number> = {
 };
 
 export async function pasteIntoFocusedApp(text: string): Promise<void> {
-  if (process.env.NODE_ENV !== "production") {
-    console.log("[paste] text:", JSON.stringify(text));
-  }
   if (!text?.trim()) return;
 
-  // Detect if we have native binaries for faster settle times
-  const hasNative =
-    (process.platform === "darwin" &&
-      getNativeBinaryPath("macos-fast-paste") !== null) ||
-    (process.platform === "win32" &&
-      getNativeBinaryPath("windows-fast-paste") !== null) ||
-    (process.platform === "linux" &&
-      getNativeBinaryPath("linux-fast-paste") !== null);
+  const t0 = performance.now();
 
+  // 1. Clipboard write
   const prior = clipboard.readText();
   clipboard.writeText(text);
+  const tClipWrite = performance.now();
 
-  // Verify the clipboard write actually took effect before pasting.
-  // Electron's clipboard API is synchronous on the main thread, but a
-  // short spin-wait guards against external clipboard managers that may
-  // overwrite the value immediately after our write.
+  // 2. Clipboard verify
   for (let i = 0; i < 5; i++) {
     if (clipboard.readText() === text) break;
     await new Promise((r) => setTimeout(r, 10));
     clipboard.writeText(text);
   }
+  const tClipVerify = performance.now();
+
+  let method: "native" | "legacy" = "legacy";
 
   try {
+    // 3. Keystroke injection
     switch (process.platform) {
       case "darwin":
-        await pasteMac();
+        method = await pasteMac();
         break;
       case "win32":
-        await pasteWindows();
+        method = await pasteWindows();
         break;
       default:
-        await pasteLinux();
+        method = await pasteLinux();
         break;
     }
+    const tKeystroke = performance.now();
 
-    const settleTable = hasNative ? PASTE_SETTLE_MS : PASTE_SETTLE_LEGACY_MS;
+    // 4. Settle wait
+    const settleTable =
+      method === "native" ? PASTE_SETTLE_MS : PASTE_SETTLE_LEGACY_MS;
     const settleMs = settleTable[process.platform] ?? 500;
     await new Promise((r) => setTimeout(r, settleMs));
-  } finally {
+    const tSettle = performance.now();
+
+    // 5. Clipboard restore
     clipboard.writeText(prior);
+    const tRestore = performance.now();
+
+    // Record timing breakdown
+    lastPasteTiming = {
+      clipboardWriteMs: round(tClipWrite - t0),
+      clipboardVerifyMs: round(tClipVerify - tClipWrite),
+      keystrokeInjectMs: round(tKeystroke - tClipVerify),
+      settleMs: round(tSettle - tKeystroke),
+      clipboardRestoreMs: round(tRestore - tSettle),
+      totalMs: round(tRestore - t0),
+      method,
+      platform: process.platform,
+    };
+
+    // Log timing in dev mode
+    if (process.env.NODE_ENV !== "production") {
+      const t = lastPasteTiming;
+      console.log(
+        `[paste] ${t.method} | total: ${t.totalMs}ms | ` +
+          `write: ${t.clipboardWriteMs}ms, verify: ${t.clipboardVerifyMs}ms, ` +
+          `inject: ${t.keystrokeInjectMs}ms, settle: ${t.settleMs}ms, ` +
+          `restore: ${t.clipboardRestoreMs}ms`,
+      );
+    }
+  } catch (err) {
+    clipboard.writeText(prior);
+    throw err;
   }
+}
+
+function round(n: number): number {
+  return Math.round(n * 100) / 100;
 }
