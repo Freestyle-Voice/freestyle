@@ -60,6 +60,8 @@ export class WhisperLocalTranscriptionProvider
       });
 
     async function doInference(): Promise<void> {
+      commitRequested = false;
+
       if (audioChunks.length === 0) {
         callbacks.onFinal("");
         return;
