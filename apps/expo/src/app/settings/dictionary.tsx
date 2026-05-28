@@ -7,8 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { BookOpen, Plus, Trash2, X } from "lucide-react-native";
-
+import { Icon } from "@/components/icon";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -83,7 +82,7 @@ export default function DictionaryScreen() {
           style={[styles.addButton, { backgroundColor: theme.primary }]}
           onPress={() => setIsAdding(true)}
         >
-          <Plus size={18} color="#FFF" />
+          <Icon name="plus" size={18} color="#FFF" />
         </Pressable>
       </View>
 
@@ -99,7 +98,7 @@ export default function DictionaryScreen() {
               Add Word Replacement
             </ThemedText>
             <Pressable onPress={() => setIsAdding(false)}>
-              <X size={18} color={theme.textSecondary} />
+              <Icon name="close" size={18} color={theme.textSecondary} />
             </Pressable>
           </View>
           <TextInput
@@ -168,14 +167,14 @@ export default function DictionaryScreen() {
                 onPress={() => handleDelete(item.id, item.key)}
                 hitSlop={8}
               >
-                <Trash2 size={16} color={theme.danger} />
+                <Icon name="trash" size={16} color={theme.danger} />
               </Pressable>
             </View>
           </View>
         )}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <BookOpen size={40} color={theme.textTertiary} />
+            <Icon name="book" size={40} color={theme.textTertiary} />
             <ThemedText themeColor="textSecondary" style={{ marginTop: Spacing.two }}>
               No dictionary entries yet
             </ThemedText>

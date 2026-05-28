@@ -7,8 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { FileText, Lock, Plus, Trash2, X } from "lucide-react-native";
-
+import { Icon } from "@/components/icon";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -79,7 +78,7 @@ export default function FormatsScreen() {
           style={[styles.addButton, { backgroundColor: theme.primary }]}
           onPress={() => setIsAdding(true)}
         >
-          <Plus size={18} color="#FFF" />
+          <Icon name="plus" size={18} color="#FFF" />
         </Pressable>
       </View>
 
@@ -95,7 +94,7 @@ export default function FormatsScreen() {
               Add Format Rule
             </ThemedText>
             <Pressable onPress={() => setIsAdding(false)}>
-              <X size={18} color={theme.textSecondary} />
+              <Icon name="close" size={18} color={theme.textSecondary} />
             </Pressable>
           </View>
           <TextInput
@@ -163,7 +162,7 @@ export default function FormatsScreen() {
                   {item.label}
                 </ThemedText>
                 {item.is_default === 1 && (
-                  <Lock size={12} color={theme.textTertiary} />
+                  <Icon name="lock" size={12} color={theme.textTertiary} />
                 )}
               </View>
               {item.is_default !== 1 && (
@@ -173,7 +172,7 @@ export default function FormatsScreen() {
                   }
                   hitSlop={8}
                 >
-                  <Trash2 size={16} color={theme.danger} />
+                  <Icon name="trash" size={16} color={theme.danger} />
                 </Pressable>
               )}
             </View>
@@ -191,7 +190,7 @@ export default function FormatsScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <FileText size={40} color={theme.textTertiary} />
+            <Icon name="file" size={40} color={theme.textTertiary} />
             <ThemedText themeColor="textSecondary">
               No format rules configured
             </ThemedText>

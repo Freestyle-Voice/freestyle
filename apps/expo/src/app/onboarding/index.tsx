@@ -1,13 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import {
-  Check,
-  ChevronRight,
-  Key,
-  Languages,
-  Mic,
-  Wand2,
-} from "lucide-react-native";
+import { Icon } from "@/components/icon";
 import { useCallback, useState } from "react";
 import {
   Alert,
@@ -112,7 +105,7 @@ export default function OnboardingScreen() {
                 { backgroundColor: theme.primaryLight },
               ]}
             >
-              <Wand2 size={40} color={theme.primary} />
+              <Icon name="wand" size={40} color={theme.primary} />
             </View>
             <ThemedText type="title" style={styles.welcomeTitle}>
               Freestyle
@@ -133,7 +126,7 @@ export default function OnboardingScreen() {
             <ThemedText style={styles.primaryButtonText}>
               Get Started
             </ThemedText>
-            <ChevronRight size={18} color="#FFF" />
+            <Icon name="chevronRight" size={18} color="#FFF" />
           </Pressable>
         </View>
       )}
@@ -166,7 +159,7 @@ export default function OnboardingScreen() {
                     { backgroundColor: theme.primaryLight },
                   ]}
                 >
-                  <Key size={18} color={theme.primary} />
+                  <Icon name="key" size={18} color={theme.primary} />
                 </View>
                 <View style={styles.providerInfo}>
                   <ThemedText style={{ fontWeight: "600" }}>
@@ -176,7 +169,7 @@ export default function OnboardingScreen() {
                     {provider.description}
                   </ThemedText>
                 </View>
-                <ChevronRight size={18} color={theme.textTertiary} />
+                <Icon name="chevronRight" size={18} color={theme.textTertiary} />
               </Pressable>
             ))}
           </View>
@@ -260,7 +253,7 @@ export default function OnboardingScreen() {
                 { backgroundColor: theme.primaryLight },
               ]}
             >
-              <Mic size={40} color={theme.primary} />
+              <Icon name="mic" size={40} color={theme.primary} />
             </View>
             <ThemedText type="subtitle" style={{ textAlign: "center" }}>
               Microphone Access
@@ -278,7 +271,7 @@ export default function OnboardingScreen() {
             style={[styles.primaryButton, { backgroundColor: theme.primary }]}
             onPress={handleMicPermission}
           >
-            <Mic size={18} color="#FFF" />
+            <Icon name="mic" size={18} color="#FFF" />
             <ThemedText style={styles.primaryButtonText}>
               Allow Microphone
             </ThemedText>
@@ -295,7 +288,7 @@ export default function OnboardingScreen() {
                 { backgroundColor: theme.successLight },
               ]}
             >
-              <Check size={40} color={theme.success} />
+              <Icon name="check" size={40} color={theme.success} />
             </View>
             <ThemedText type="subtitle" style={{ textAlign: "center" }}>
               You're all set!

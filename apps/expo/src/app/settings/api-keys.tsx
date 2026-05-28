@@ -7,8 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Check, Eye, EyeOff, Key, Trash2 } from "lucide-react-native";
-
+import { Icon } from "@/components/icon";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -99,7 +98,7 @@ export default function ApiKeysScreen() {
                         { backgroundColor: theme.successLight },
                       ]}
                     >
-                      <Check size={10} color={theme.success} />
+                      <Icon name="check" size={10} color={theme.success} />
                       <ThemedText
                         style={{ color: theme.success, fontSize: 11 }}
                       >
@@ -137,9 +136,9 @@ export default function ApiKeysScreen() {
                   />
                   <Pressable onPress={() => setShowKey(!showKey)}>
                     {showKey ? (
-                      <EyeOff size={18} color={theme.textSecondary} />
+                      <Icon name="eye-off" size={18} color={theme.textSecondary} />
                     ) : (
-                      <Eye size={18} color={theme.textSecondary} />
+                      <Icon name="eye" size={18} color={theme.textSecondary} />
                     )}
                   </Pressable>
                 </View>
@@ -187,7 +186,8 @@ export default function ApiKeysScreen() {
                     setShowKey(false);
                   }}
                 >
-                  <Key
+                  <Icon
+                    name="key"
                     size={14}
                     color={hasKey ? theme.text : "#FFF"}
                   />
@@ -208,7 +208,7 @@ export default function ApiKeysScreen() {
                     ]}
                     onPress={() => handleDelete(provider.id, provider.name)}
                   >
-                    <Trash2 size={14} color={theme.danger} />
+                    <Icon name="trash" size={14} color={theme.danger} />
                   </Pressable>
                 )}
               </View>

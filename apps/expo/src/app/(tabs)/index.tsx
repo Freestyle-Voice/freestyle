@@ -23,8 +23,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Copy, Mic, Share2, X } from "lucide-react-native";
-
+import { Icon } from "@/components/icon";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -266,7 +265,7 @@ export default function RecordScreen() {
                 {state === "error" ? "Error" : "Transcription"}
               </ThemedText>
               <Pressable onPress={handleDismiss} hitSlop={12}>
-                <X size={18} color={theme.textSecondary} />
+                <Icon name="close" size={18} color={theme.textSecondary} />
               </Pressable>
             </View>
 
@@ -287,7 +286,7 @@ export default function RecordScreen() {
                   ]}
                   onPress={handleCopy}
                 >
-                  <Copy size={16} color={theme.primary} />
+                  <Icon name="copy" size={16} color={theme.primary} />
                   <ThemedText style={{ color: theme.primary, fontSize: 14 }}>
                     {copied ? "Copied!" : "Copy"}
                   </ThemedText>
@@ -300,7 +299,7 @@ export default function RecordScreen() {
                   ]}
                   onPress={handleShare}
                 >
-                  <Share2 size={16} color={theme.text} />
+                  <Icon name="share" size={16} color={theme.text} />
                   <ThemedText style={{ fontSize: 14 }}>Share</ThemedText>
                 </Pressable>
               </View>
@@ -337,7 +336,7 @@ export default function RecordScreen() {
                   },
                 ]}
               >
-                <Mic size={32} color="#FFFFFF" />
+                <Icon name="mic" size={32} color="#FFFFFF" />
               </Pressable>
             </Animated.View>
           </View>

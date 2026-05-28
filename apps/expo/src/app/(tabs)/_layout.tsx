@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
-import { Mic, Clock, Settings } from "lucide-react-native";
 
+import { Icon } from "@/components/icon";
 import { useTheme } from "@/hooks/use-theme";
 
 export default function TabLayout() {
@@ -22,14 +22,18 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Record",
-          tabBarIcon: ({ color, size }) => <Mic size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="mic" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
           title: "History",
-          tabBarIcon: ({ color, size }) => <Clock size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="clock" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -37,7 +41,7 @@ export default function TabLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color, size }) => (
-            <Settings size={size} color={color} />
+            <Icon name="settings" size={size} color={color} />
           ),
         }}
       />

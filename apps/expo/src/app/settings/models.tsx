@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { Check, Plus, Trash2 } from "lucide-react-native";
-
+import { Icon } from "@/components/icon";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -128,7 +127,7 @@ export default function ModelsScreen() {
             ]}
             onPress={() => handleSetDefault(config.id, type)}
           >
-            <Check size={14} color={theme.primary} />
+            <Icon name="check" size={14} color={theme.primary} />
           </Pressable>
         )}
         <Pressable
@@ -138,7 +137,7 @@ export default function ModelsScreen() {
           ]}
           onPress={() => handleDelete(config.id, config.model_name)}
         >
-          <Trash2 size={14} color={theme.danger} />
+          <Icon name="trash" size={14} color={theme.danger} />
         </Pressable>
       </View>
     </View>
@@ -162,7 +161,7 @@ export default function ModelsScreen() {
           {model.provider}
         </ThemedText>
       </View>
-      <Plus size={18} color={theme.primary} />
+      <Icon name="plus" size={18} color={theme.primary} />
     </Pressable>
   );
 

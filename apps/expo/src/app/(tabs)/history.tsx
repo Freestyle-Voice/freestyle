@@ -10,8 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { Clock, Copy, Search, Trash2 } from "lucide-react-native";
-
+import { Icon } from "@/components/icon";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -129,7 +128,7 @@ export default function HistoryScreen() {
               ]}
               onPress={() => handleCopy(displayText)}
             >
-              <Copy size={14} color={theme.primary} />
+              <Icon name="copy" size={14} color={theme.primary} />
               <ThemedText style={{ color: theme.primary, fontSize: 13 }}>
                 Copy
               </ThemedText>
@@ -141,7 +140,7 @@ export default function HistoryScreen() {
               ]}
               onPress={() => handleDelete(item.id)}
             >
-              <Trash2 size={14} color={theme.danger} />
+              <Icon name="trash" size={14} color={theme.danger} />
               <ThemedText style={{ color: theme.danger, fontSize: 13 }}>
                 Delete
               </ThemedText>
@@ -222,7 +221,7 @@ export default function HistoryScreen() {
           },
         ]}
       >
-        <Search size={16} color={theme.textTertiary} />
+        <Icon name="search" size={16} color={theme.textTertiary} />
         <TextInput
           style={[styles.searchInput, { color: theme.text }]}
           placeholder="Search transcriptions..."
@@ -239,7 +238,7 @@ export default function HistoryScreen() {
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Clock size={48} color={theme.textTertiary} />
+            <Icon name="clock" size={48} color={theme.textTertiary} />
             <ThemedText
               themeColor="textSecondary"
               style={styles.emptyText}
