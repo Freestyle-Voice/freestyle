@@ -22,6 +22,9 @@ export default defineConfig({
         "@renderer": resolve("src/renderer/src"),
       },
     },
+    optimizeDeps: {
+      include: ["react", "react-dom"],
+    },
     plugins: [react(), tailwindcss()],
     build: {
       rollupOptions: {
