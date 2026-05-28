@@ -147,8 +147,7 @@ function Scene({
       const isDark = document.documentElement.classList.contains("dark");
       const u = circleRef.current.material.uniforms;
       u.uInverted.value = isDark ? 1 : 0;
-      u.uRampDark.value.set(isDark ? 0x1e1c16 : 0x000000);
-      u.uRampLight.value.set(isDark ? 0xffffff : 0xfbf8ee);
+      u.uBgColor.value.set(isDark ? 0x1e1c16 : 0xfbf8ee);
     };
 
     apply();
@@ -247,13 +246,8 @@ function Scene({
       uInputVolume: new Uniform(0),
       uOutputVolume: new Uniform(0),
       uOpacity: new Uniform(0),
-      // Ramp endpoints match --card in light/dark mode
-      uRampDark: new Uniform(
-        isDark ? new Color(0x1e1c16) : new Color(0x000000),
-      ),
-      uRampLight: new Uniform(
-        isDark ? new Color(0xffffff) : new Color(0xfbf8ee),
-      ),
+      // Background color matches --card for areas with low blob coverage
+      uBgColor: new Uniform(isDark ? new Color(0x1e1c16) : new Color(0xfbf8ee)),
     };
   }, [perlinNoiseTexture, offsets]);
 
@@ -308,8 +302,7 @@ uniform vec3 uColor2;
 uniform float uInputVolume;
 uniform float uOutputVolume;
 uniform float uOpacity;
-uniform vec3 uRampDark;
-uniform vec3 uRampLight;
+uniform vec3 uBgColor;
 uniform sampler2D uPerlinTexture;
 varying vec2 vUv;
 
@@ -491,14 +484,14 @@ void main() {
     color.rgb = 1.0 - (1.0 - color.rgb) * (1.0 - ringColor * totalRingAlpha);
 
     // Define colours to ramp against greyscale
-    vec3 color1 = uRampDark;   // Dark end (matches --card in dark mode)
+    vec3 color1 = uBgColor;    // Background (matches --card)
     vec3 color2 = uColor1;     // Darker accent
     vec3 color3 = uColor2;     // Lighter accent
-    vec3 color4 = uRampLight;  // Light end (matches --card in light mode)
+    vec3 color4 = uBgColor;    // Background (matches --card)
 
     // Convert grayscale color to the color ramp
     float luminance = mix(color.r, 1.0 - color.r, uInverted);
-    color.rgb = colorRamp(luminance, color1, color2, color3, color4); // Apply the color ramp
+    color.rgb = colorRamp(luminance, color1, color2, color3, color4);
 
     // Apply fade-in opacity
     color.a *= uOpacity;
