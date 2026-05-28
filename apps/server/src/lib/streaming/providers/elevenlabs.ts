@@ -174,6 +174,7 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
 
               // Only send the final result when the user-initiated commit fires
               if (isFinalCommit) {
+                isFinalCommit = false;
                 callbacks.onFinal(accumulatedText);
               }
               return;
@@ -187,12 +188,14 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
             case "input_error":
             case "chunk_size_exceeded":
             case "insufficient_audio_activity":
+              stopAutoCommit();
               callbacks.onError(msg.error ?? "ElevenLabs error");
               return;
           }
         });
 
         ws.on("error", (err) => {
+          stopAutoCommit();
           callbacks.onError(err instanceof Error ? err.message : String(err));
         });
 

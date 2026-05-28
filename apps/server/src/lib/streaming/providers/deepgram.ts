@@ -85,6 +85,7 @@ export class DeepgramTranscriptionProvider implements TranscriptionProvider {
         // If the user already committed (released hotkey), send the
         // final accumulated result now that Deepgram has flushed.
         if (commitRequested) {
+          commitRequested = false;
           callbacks.onFinal(accumulatedText);
         } else {
           // Show accumulated progress as partial preview
@@ -123,10 +124,13 @@ export class DeepgramTranscriptionProvider implements TranscriptionProvider {
         ws.send(JSON.stringify({ type: "Finalize" }));
       },
       cancel(): void {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        ws.send(JSON.stringify({ type: "CloseStream" }));
         accumulatedText = "";
         partialText = "";
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "CloseStream" }));
+        } else if (ws.readyState <= WebSocket.OPEN) {
+          ws.close();
+        }
       },
       close(): void {
         if (ws.readyState <= WebSocket.OPEN) ws.close();

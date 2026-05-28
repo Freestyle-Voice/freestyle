@@ -110,7 +110,7 @@ export default function AppPage(): React.JSX.Element {
   const [state, setState] = useState<PillState>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [message, setMessage] = useState("");
-  const [pillAlign, setPillAlign] = useState<"start" | "center" | "end">("end");
+  const [pillAlign, setPillAlign] = useState<"start" | "end">("end");
   const [pillSide, setPillSide] = useState<"center" | "right">("center");
   const useStreamingRef = useRef(false);
 
@@ -639,9 +639,7 @@ export default function AppPage(): React.JSX.Element {
 
   // ---- Preferences ----
   const applyPillPosition = useCallback((pos: string | null | undefined) => {
-    if (pos?.startsWith("top")) setPillAlign("start");
-    else if (pos?.startsWith("bottom") || !pos) setPillAlign("end");
-    else setPillAlign("center");
+    setPillAlign(pos?.startsWith("top") ? "start" : "end");
     setPillSide(pos?.endsWith("right") ? "right" : "center");
   }, []);
 
@@ -810,11 +808,6 @@ export default function AppPage(): React.JSX.Element {
             color: transparent;
             animation: shimmer 2s linear infinite;
           }
-          @keyframes fade-in {
-            from { opacity: 0; }
-            to { opacity: 1; }
-          }
-          .pill-fade-in { animation: fade-in 200ms ease-out both; }
           @keyframes stack-slide-down {
             from { opacity: 0; transform: translateX(-50%) scale(0.87) translateY(-8px); }
             to   { opacity: 0.95; transform: translateX(-50%) scale(0.87) translateY(0); }

@@ -919,7 +919,11 @@ app.whenReady().then(async () => {
 
   ipcMain.on("settings:set-pill-position", (_event, position: string) => {
     writeSettings({ pillPosition: position });
-    // Notify the pill window so it can update alignment/stack direction
+    // Reposition the window and notify the renderer for CSS alignment
+    if (mainWindow) {
+      const { x, y } = getAppWindowPosition();
+      mainWindow.setPosition(x, y);
+    }
     mainWindow?.webContents.send("settings:pill-position-changed", position);
   });
 
