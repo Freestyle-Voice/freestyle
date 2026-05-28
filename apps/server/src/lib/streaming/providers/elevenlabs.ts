@@ -44,6 +44,36 @@ async function getSingleUseToken(apiKey: string): Promise<string> {
   return data.token;
 }
 
+/**
+ * Join two transcript segments, removing duplicate words at the boundary.
+ * When auto-commits fire mid-speech, ElevenLabs may repeat the last few
+ * words of the previous segment at the start of the next one.
+ */
+function joinSegments(prev: string, next: string): string {
+  if (!prev) return next;
+  if (!next) return prev;
+
+  const prevWords = prev.split(/\s+/);
+  const nextWords = next.split(/\s+/);
+
+  // Check for overlap: see if the last N words of prev match the first N of next
+  const maxOverlap = Math.min(5, prevWords.length, nextWords.length);
+  let overlapLen = 0;
+
+  for (let n = 1; n <= maxOverlap; n++) {
+    const tail = prevWords.slice(-n).join(" ").toLowerCase();
+    const head = nextWords.slice(0, n).join(" ").toLowerCase();
+    if (tail === head) {
+      overlapLen = n;
+    }
+  }
+
+  if (overlapLen > 0) {
+    return `${prev} ${nextWords.slice(overlapLen).join(" ")}`.trim();
+  }
+  return `${prev} ${next}`;
+}
+
 export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
   readonly providerId = "elevenlabs";
 
@@ -138,9 +168,7 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
             case "committed_transcript_with_timestamps": {
               const segmentText = (msg.text ?? partialText).trim();
               if (segmentText) {
-                accumulatedText = accumulatedText
-                  ? `${accumulatedText} ${segmentText}`
-                  : segmentText;
+                accumulatedText = joinSegments(accumulatedText, segmentText);
               }
               partialText = "";
 
