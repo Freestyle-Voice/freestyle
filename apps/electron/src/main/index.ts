@@ -41,7 +41,7 @@ import { pasteIntoFocusedApp } from "./paste";
 
 const DEFAULT_PORT = 4649;
 const APP_WIDTH = 396;
-const APP_HEIGHT = 72;
+const APP_HEIGHT = 56;
 const APP_BOTTOM_MARGIN = 0;
 
 // ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ function getAppWindowPosition(): { x: number; y: number } {
   const position = (readSettings().pillPosition as string) || "bottom-center";
 
   const sideMargin = 10;
-  const edgeMargin = 2;
+  const edgeMargin = 0;
   switch (position) {
     case "top-center":
       return { x: Math.round((width - APP_WIDTH) / 2), y: edgeMargin };
