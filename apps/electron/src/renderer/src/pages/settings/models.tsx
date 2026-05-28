@@ -473,9 +473,11 @@ export default function ModelsPage(): React.JSX.Element {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <p className="text-muted-foreground text-sm">Loading models…</p>
-      </div>
+      <PageShell>
+        <div className="flex items-center justify-center py-24">
+          <p className="text-muted-foreground text-sm">Loading models…</p>
+        </div>
+      </PageShell>
     );
   }
 
@@ -486,116 +488,147 @@ export default function ModelsPage(): React.JSX.Element {
   // -------------------------------------------------------------------------
 
   return (
-    <div className="space-y-7">
-      <PageHeader title="Models" subtitle="" />
-
-      {hasAnyProvider && (
-        <PairCard
-          voice={defaultVoice}
-          llm={defaultLlm}
-          llmCleanup={llmCleanup}
-          onToggleCleanup={setCleanupOn}
-          onChangeVoice={() => openPicker("voice")}
-          onChangeLlm={() => openPicker("llm")}
-          pickerOpen={pickerOpen}
-        />
-      )}
-
-      {/* Inline picker — appears below the pair card */}
-      {pickerOpen && (
-        <ModelPicker
-          type={pickerOpen}
-          modelsByProvider={
-            pickerOpen === "voice" ? voiceModelsByProvider : llmModelsByProvider
-          }
-          currentDefault={pickerOpen === "voice" ? defaultVoice : defaultLlm}
-          search={pickerSearch}
-          setSearch={setPickerSearch}
-          keyProviders={keyProviders}
-          onSelect={(m) => selectModel(m, pickerOpen)}
-          onClose={closePicker}
-        />
-      )}
-
-      {/* Local LLM toggle + config — only shown when cleanup is on */}
-      {llmCleanup && hasAnyProvider && (
-        <LocalLlmSection
-          useLocalLlm={useLocalLlm}
-          setUseLocalLlm={setUseLocalLlm}
-          form={localLlmForm}
-          showApiKey={showLocalLlmApiKey}
-          setShowApiKey={setShowLocalLlmApiKey}
-          testing={localLlmTesting}
-          connected={localLlmConnected}
-          error={localLlmError}
-          models={localLlmModels}
-          defaultLlm={defaultLlm}
-          onTest={testLocalLlm}
-          onClearStatus={() => {
-            setLocalLlmConnected(null);
-            setLocalLlmError(null);
-          }}
-          onSelectLocalModel={async (modelName) => {
-            const modelId = `local-llm/${modelName}`;
-            await getClient().api.models.configured.$post({
-              json: {
-                provider: "local-llm",
-                model_id: modelId,
-                model_name: modelName,
-                type: "llm",
-                is_default: true,
-              },
-            });
-            loadData();
-          }}
-        />
-      )}
-
-      {/* Providers section */}
-      <ProvidersSection
-        apiKeys={apiKeys}
-        configured={configured}
-        onAdd={() => openPicker("voice")}
-        onEdit={startEditProvider}
-        onDelete={tryDeleteProvider}
+    <PageShell>
+      <PageHeader
+        title="Models"
+        subtitle="Configure voice and language models for transcription."
       />
+      <div className="space-y-7">
+        {hasAnyProvider && (
+          <PairCard
+            voice={defaultVoice}
+            llm={defaultLlm}
+            llmCleanup={llmCleanup}
+            onToggleCleanup={setCleanupOn}
+            onChangeVoice={() => openPicker("voice")}
+            onChangeLlm={() => openPicker("llm")}
+            pickerOpen={pickerOpen}
+          />
+        )}
 
-      {/* Modals */}
-      {pendingKeyProvider && pendingModel && (
-        <ApiKeyDialog
-          model={pendingModel}
-          provider={pendingKeyProvider}
-          form={apiKeyForm}
-          show={showPendingKey}
-          setShow={setShowPendingKey}
-          onClose={closePendingKey}
-          onSubmit={savePendingKeyAndModel}
-        />
-      )}
+        {/* Inline picker — appears below the pair card */}
+        {pickerOpen && (
+          <ModelPicker
+            type={pickerOpen}
+            modelsByProvider={
+              pickerOpen === "voice"
+                ? voiceModelsByProvider
+                : llmModelsByProvider
+            }
+            currentDefault={pickerOpen === "voice" ? defaultVoice : defaultLlm}
+            search={pickerSearch}
+            setSearch={setPickerSearch}
+            keyProviders={keyProviders}
+            onSelect={(m) => selectModel(m, pickerOpen)}
+            onClose={closePicker}
+          />
+        )}
 
-      {editingProvider && (
-        <EditKeyDialog
-          provider={editingProvider}
-          value={editKeyValue}
-          setValue={setEditKeyValue}
-          show={showEditKey}
-          setShow={setShowEditKey}
-          onClose={closeEditProvider}
-          onSave={saveProviderKey}
-        />
-      )}
+        {/* Local LLM toggle + config — only shown when cleanup is on */}
+        {llmCleanup && hasAnyProvider && (
+          <LocalLlmSection
+            useLocalLlm={useLocalLlm}
+            setUseLocalLlm={setUseLocalLlm}
+            form={localLlmForm}
+            showApiKey={showLocalLlmApiKey}
+            setShowApiKey={setShowLocalLlmApiKey}
+            testing={localLlmTesting}
+            connected={localLlmConnected}
+            error={localLlmError}
+            models={localLlmModels}
+            defaultLlm={defaultLlm}
+            onTest={testLocalLlm}
+            onClearStatus={() => {
+              setLocalLlmConnected(null);
+              setLocalLlmError(null);
+            }}
+            onSelectLocalModel={async (modelName) => {
+              const modelId = `local-llm/${modelName}`;
+              await getClient().api.models.configured.$post({
+                json: {
+                  provider: "local-llm",
+                  model_id: modelId,
+                  model_name: modelName,
+                  type: "llm",
+                  is_default: true,
+                },
+              });
+              loadData();
+            }}
+          />
+        )}
 
-      {deleteProvider && (
-        <DeleteDialog
-          provider={deleteProvider}
-          blockedBy={deleteBlockedBy}
-          onCancel={() => {
-            setDeleteProvider(null);
-            setDeleteBlockedBy([]);
-          }}
-          onConfirm={confirmDeleteProvider}
+        {/* Providers section */}
+        <ProvidersSection
+          apiKeys={apiKeys}
+          configured={configured}
+          onAdd={() => openPicker("voice")}
+          onEdit={startEditProvider}
+          onDelete={tryDeleteProvider}
         />
-      )}
+
+        {/* Modals */}
+        {pendingKeyProvider && pendingModel && (
+          <ApiKeyDialog
+            model={pendingModel}
+            provider={pendingKeyProvider}
+            form={apiKeyForm}
+            show={showPendingKey}
+            setShow={setShowPendingKey}
+            onClose={closePendingKey}
+            onSubmit={savePendingKeyAndModel}
+          />
+        )}
+
+        {editingProvider && (
+          <EditKeyDialog
+            provider={editingProvider}
+            value={editKeyValue}
+            setValue={setEditKeyValue}
+            show={showEditKey}
+            setShow={setShowEditKey}
+            onClose={closeEditProvider}
+            onSave={saveProviderKey}
+          />
+        )}
+
+        {deleteProvider && (
+          <DeleteDialog
+            provider={deleteProvider}
+            blockedBy={deleteBlockedBy}
+            onCancel={() => {
+              setDeleteProvider(null);
+              setDeleteBlockedBy([]);
+            }}
+            onConfirm={confirmDeleteProvider}
+          />
+        )}
+      </div>
+    </PageShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PageShell — draggable topbar + padded scroll area, matches history/dictionary/formats
+// ---------------------------------------------------------------------------
+
+function PageShell({
+  children,
+}: {
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div
+      className="flex h-full min-h-0 flex-col"
+      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+    >
+      <div className="h-9 shrink-0" />
+      <div
+        className="flex-1 overflow-auto px-12 pb-12"
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -609,26 +642,20 @@ function PageHeader({
   subtitle,
 }: {
   title: string;
-  subtitle: string;
+  subtitle?: string;
 }): React.JSX.Element {
   return (
-    <header className="mb-2">
-      <h1
-        className="serif text-foreground m-0"
-        style={{
-          fontSize: 48,
-          lineHeight: 0.95,
-          letterSpacing: "-0.025em",
-          fontWeight: 400,
-        }}
-      >
+    <div className="mb-7">
+      <h1 className="serif text-foreground m-0 text-[48px] font-normal leading-[0.95] tracking-[-0.025em]">
         <span className="serif-italic text-primary">{title}</span>
-        <span>.</span>
+        <span>. </span>
       </h1>
-      <p className="text-muted-foreground mt-2.5 max-w-[580px] text-sm leading-relaxed">
-        {subtitle}
-      </p>
-    </header>
+      {subtitle && (
+        <p className="text-muted-foreground mt-2.5 max-w-[580px] text-[14px] leading-[1.5]">
+          {subtitle}
+        </p>
+      )}
+    </div>
   );
 }
 

@@ -363,310 +363,322 @@ export default function GeneralSettingsPage(): React.JSX.Element {
   const capturedKeys = capturedCombo ? comboDisplayKeys(capturedCombo) : [];
 
   return (
-    <div className="max-w-4xl">
-      <header className="mb-6">
-        <h1 className="serif text-foreground text-5xl font-normal leading-[0.95] tracking-tight">
-          Settings<span className="serif-italic text-primary">.</span>
-        </h1>
-        <p className="text-muted-foreground mt-2.5 max-w-xl text-sm leading-relaxed">
-          Configure how Freestyle listens, speaks, and looks.
-        </p>
-      </header>
-
-      {updateAvailable && (
-        <div className="border-primary/30 bg-primary/5 mb-6 flex items-center justify-between rounded-lg border px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Download className="text-primary h-4 w-4" />
-            <span className="text-sm">
-              {updateDownloaded
-                ? `Version ${updateAvailable} ready to install`
-                : `Version ${updateAvailable} available`}
-            </span>
-          </div>
-          {updateDownloaded ? (
-            <button
-              type="button"
-              onClick={() => window.api?.installUpdate()}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 rounded px-3 py-1 text-xs font-medium"
-            >
-              Restart & Update
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setDownloading(true);
-                window.api?.downloadUpdate();
-              }}
-              disabled={downloading}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 rounded px-3 py-1 text-xs font-medium disabled:opacity-50"
-            >
-              {downloading ? "Downloading..." : "Download"}
-            </button>
-          )}
+    <div
+      className="flex h-full min-h-0 flex-col"
+      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+    >
+      <div className="h-9 shrink-0" />
+      <div
+        className="flex-1 overflow-auto px-12 pb-12"
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
+        <div className="mb-7">
+          <h1 className="serif text-foreground m-0 text-[48px] font-normal leading-[0.95] tracking-[-0.025em]">
+            <span className="serif-italic text-primary">Settings</span>
+            <span>. </span>
+          </h1>
+          <p className="text-muted-foreground mt-2.5 max-w-[580px] text-[14px] leading-[1.5]">
+            Configure how Freestyle listens, speaks, and looks.
+          </p>
         </div>
-      )}
 
-      <Section label="Application">
-        <Row
-          label="Automatic updates"
-          desc="Download new versions in the background as soon as they ship."
-          last
-        >
-          <Toggle on={autoUpdate} onChange={handleAutoUpdateToggle} />
-        </Row>
-      </Section>
-
-      <Section label="Recording">
-        <Row label="Hotkey" desc="Hold to record, release to transcribe.">
-          {recorderState === "idle" ? (
-            <button
-              type="button"
-              onClick={startHotkeyRecording}
-              className="border-border hover:bg-secondary inline-flex items-center gap-3 rounded-lg border px-3.5 py-2 transition-colors"
-            >
-              <Keyboard className="text-muted-foreground h-4 w-4 shrink-0" />
-              <KeyComboDisplay keys={formatAcceleratorKeys(hotkey)} />
-              <span className="text-muted-foreground ml-1 text-xs">Change</span>
-            </button>
-          ) : recorderState === "recording" ? (
-            <div className="border-primary/60 bg-primary/5 inline-flex items-center gap-3 rounded-lg border px-3.5 py-2">
-              <Keyboard className="text-primary h-4 w-4 shrink-0" />
-              {liveKeys.length > 0 ? (
-                <>
-                  <KeyComboDisplay keys={liveKeys} variant="dim" />
-                  <span className="text-muted-foreground animate-pulse text-xs">
-                    + press a key
-                  </span>
-                </>
-              ) : (
-                <span className="text-muted-foreground animate-pulse text-sm">
-                  Press a key combination…
-                </span>
-              )}
+        {updateAvailable && (
+          <div className="border-primary/30 bg-primary/5 mb-6 flex items-center justify-between rounded-lg border px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Download className="text-primary h-4 w-4" />
+              <span className="text-sm">
+                {updateDownloaded
+                  ? `Version ${updateAvailable} ready to install`
+                  : `Version ${updateAvailable} available`}
+              </span>
+            </div>
+            {updateDownloaded ? (
               <button
                 type="button"
-                onClick={cancelHotkeyRecording}
-                className="border-border hover:bg-secondary ml-2 rounded-md border px-2.5 py-1 text-xs"
+                onClick={() => window.api?.installUpdate()}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 rounded px-3 py-1 text-xs font-medium"
               >
-                Cancel
+                Restart & Update
               </button>
-            </div>
-          ) : (
-            <div className="border-primary/60 bg-primary/5 inline-flex items-center gap-3 rounded-lg border px-3.5 py-2">
-              <Keyboard className="text-primary h-4 w-4 shrink-0" />
-              <KeyComboDisplay keys={capturedKeys} variant="recording" />
-              <div className="ml-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={saveHotkeyRecording}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-2.5 py-1 text-xs font-medium"
-                >
-                  Save
-                </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setDownloading(true);
+                  window.api?.downloadUpdate();
+                }}
+                disabled={downloading}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 rounded px-3 py-1 text-xs font-medium disabled:opacity-50"
+              >
+                {downloading ? "Downloading..." : "Download"}
+              </button>
+            )}
+          </div>
+        )}
+
+        <Section label="Application">
+          <Row
+            label="Automatic updates"
+            desc="Download new versions in the background as soon as they ship."
+            last
+          >
+            <Toggle on={autoUpdate} onChange={handleAutoUpdateToggle} />
+          </Row>
+        </Section>
+
+        <Section label="Recording">
+          <Row label="Hotkey" desc="Hold to record, release to transcribe.">
+            {recorderState === "idle" ? (
+              <button
+                type="button"
+                onClick={startHotkeyRecording}
+                className="border-border hover:bg-secondary inline-flex items-center gap-3 rounded-lg border px-3.5 py-2 transition-colors"
+              >
+                <Keyboard className="text-muted-foreground h-4 w-4 shrink-0" />
+                <KeyComboDisplay keys={formatAcceleratorKeys(hotkey)} />
+                <span className="text-muted-foreground ml-1 text-xs">
+                  Change
+                </span>
+              </button>
+            ) : recorderState === "recording" ? (
+              <div className="border-primary/60 bg-primary/5 inline-flex items-center gap-3 rounded-lg border px-3.5 py-2">
+                <Keyboard className="text-primary h-4 w-4 shrink-0" />
+                {liveKeys.length > 0 ? (
+                  <>
+                    <KeyComboDisplay keys={liveKeys} variant="dim" />
+                    <span className="text-muted-foreground animate-pulse text-xs">
+                      + press a key
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground animate-pulse text-sm">
+                    Press a key combination…
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={cancelHotkeyRecording}
-                  className="border-border hover:bg-secondary rounded-md border px-2.5 py-1 text-xs"
+                  className="border-border hover:bg-secondary ml-2 rounded-md border px-2.5 py-1 text-xs"
                 >
                   Cancel
                 </button>
               </div>
-            </div>
-          )}
-        </Row>
-
-        <Row label="Microphone" desc="Select your audio input device.">
-          <div className="border-border bg-card text-foreground inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
-            <Mic className="text-muted-foreground h-4 w-4 shrink-0" />
-            <select
-              id="settings-microphone"
-              value={selectedDevice}
-              onChange={(e) => handleDeviceChange(e.target.value)}
-              className="bg-transparent outline-none"
-              style={{ minWidth: 240 }}
-            >
-              <option value="">System default</option>
-              {devices.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </Row>
-
-        <Row label="Language" desc="Hint for the transcription model.">
-          <div className="border-border bg-card text-foreground inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
-            <Languages className="text-muted-foreground h-4 w-4 shrink-0" />
-            <select
-              id="settings-language"
-              value={language}
-              onChange={(e) => handleLanguageChange(e.target.value)}
-              className="bg-transparent outline-none"
-              style={{ minWidth: 200 }}
-            >
-              <option value="auto">Auto-detect</option>
-              <option value="en">English</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="it">Italian</option>
-              <option value="pt">Portuguese</option>
-              <option value="nl">Dutch</option>
-              <option value="ru">Russian</option>
-              <option value="zh">Chinese</option>
-              <option value="ja">Japanese</option>
-              <option value="ko">Korean</option>
-              <option value="ar">Arabic</option>
-              <option value="hi">Hindi</option>
-              <option value="pl">Polish</option>
-              <option value="tr">Turkish</option>
-              <option value="sv">Swedish</option>
-              <option value="da">Danish</option>
-              <option value="no">Norwegian</option>
-              <option value="fi">Finnish</option>
-              <option value="uk">Ukrainian</option>
-            </select>
-          </div>
-        </Row>
-
-        <Row
-          label="Transcription prompt"
-          desc="List domain terms, names, or jargon to nudge the speech model toward better accuracy."
-        >
-          <input
-            id="settings-transcription-prompt"
-            type="text"
-            value={transcriptionPrompt}
-            onChange={(e) => setTranscriptionPrompt(e.target.value)}
-            onBlur={() => {
-              getClient()
-                .api.settings[":key"].$put({
-                  param: { key: "transcription_prompt" },
-                  json: { value: transcriptionPrompt },
-                })
-                .catch(() => {});
-            }}
-            placeholder="e.g. TypeScript, React, Kubernetes, JIRA…"
-            className="border-border bg-card text-foreground w-full max-w-md rounded-lg border px-3 py-2 text-sm"
-          />
-        </Row>
-
-        <Row
-          label="Sound feedback"
-          desc="Soft chimes at the start and end of recording."
-          last
-        >
-          <div className="flex items-center gap-2.5">
-            {soundEnabled ? (
-              <Volume2 className="text-muted-foreground h-4 w-4 shrink-0" />
             ) : (
-              <VolumeOff className="text-muted-foreground h-4 w-4 shrink-0" />
+              <div className="border-primary/60 bg-primary/5 inline-flex items-center gap-3 rounded-lg border px-3.5 py-2">
+                <Keyboard className="text-primary h-4 w-4 shrink-0" />
+                <KeyComboDisplay keys={capturedKeys} variant="recording" />
+                <div className="ml-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={saveHotkeyRecording}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-2.5 py-1 text-xs font-medium"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelHotkeyRecording}
+                    className="border-border hover:bg-secondary rounded-md border px-2.5 py-1 text-xs"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             )}
-            <Toggle on={soundEnabled} onChange={handleSoundToggle} />
-          </div>
-        </Row>
-      </Section>
+          </Row>
 
-      <Section label="Display">
-        <Row label="Theme" desc="Light, dark, or follow your system.">
-          <Segment
-            options={themeOptions.map((o) => ({
-              id: o.value,
-              label: o.label,
-              icon: o.icon,
-            }))}
-            active={theme ?? "system"}
-            onSelect={handleThemeChange}
-          />
-        </Row>
-        <Row
-          label="Widget position"
-          desc="Where the floating pill appears on your screen."
-          last
-        >
-          <Segment
-            compact
-            options={[
-              { id: "bottom-center", label: "Bottom · Center" },
-              { id: "bottom-right", label: "Bottom · Right" },
-              { id: "top-center", label: "Top · Center" },
-              { id: "top-right", label: "Top · Right" },
-            ]}
-            active={pillPosition}
-            onSelect={handlePillPositionChange}
-          />
-        </Row>
-      </Section>
+          <Row label="Microphone" desc="Select your audio input device.">
+            <div className="border-border bg-card text-foreground inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+              <Mic className="text-muted-foreground h-4 w-4 shrink-0" />
+              <select
+                id="settings-microphone"
+                value={selectedDevice}
+                onChange={(e) => handleDeviceChange(e.target.value)}
+                className="bg-transparent outline-none"
+                style={{ minWidth: 240 }}
+              >
+                <option value="">System default</option>
+                {devices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </Row>
 
-      <Section label="Permissions">
-        <Row
-          label="Microphone"
-          desc="Required to capture audio for transcription."
-        >
-          <PermissionControl
-            granted={micStatus === "granted"}
-            checking={micStatus === "unknown"}
-            actionLabel={
-              micStatus === "denied" && isMac
-                ? "Open Settings"
-                : micStatus === "granted"
-                  ? null
-                  : "Allow"
-            }
-            external={micStatus === "denied" && isMac}
-            onAction={
-              micStatus === "denied" && isMac ? openMicSettings : requestMic
-            }
-          />
-        </Row>
-        <Row
-          label="Accessibility"
-          desc={
-            isMac
-              ? "Required to detect the global hotkey and paste into other apps. Toggle Freestyle on under System Settings › Privacy & Security › Accessibility."
-              : "Required to detect the global hotkey and paste into other apps."
-          }
-          last
-        >
-          <PermissionControl
-            granted={accessibilityStatus === true}
-            checking={accessibilityStatus === null}
-            actionLabel={
-              accessibilityStatus === true
-                ? null
-                : isMac
-                  ? "Open Settings"
-                  : null
-            }
-            external={isMac}
-            onAction={openAccessibility}
-            note={
-              !isMac && accessibilityStatus !== true
-                ? "Auto-granted"
-                : undefined
-            }
-          />
-        </Row>
-      </Section>
+          <Row label="Language" desc="Hint for the transcription model.">
+            <div className="border-border bg-card text-foreground inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+              <Languages className="text-muted-foreground h-4 w-4 shrink-0" />
+              <select
+                id="settings-language"
+                value={language}
+                onChange={(e) => handleLanguageChange(e.target.value)}
+                className="bg-transparent outline-none"
+                style={{ minWidth: 200 }}
+              >
+                <option value="auto">Auto-detect</option>
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="nl">Dutch</option>
+                <option value="ru">Russian</option>
+                <option value="zh">Chinese</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="ar">Arabic</option>
+                <option value="hi">Hindi</option>
+                <option value="pl">Polish</option>
+                <option value="tr">Turkish</option>
+                <option value="sv">Swedish</option>
+                <option value="da">Danish</option>
+                <option value="no">Norwegian</option>
+                <option value="fi">Finnish</option>
+                <option value="uk">Ukrainian</option>
+              </select>
+            </div>
+          </Row>
 
-      <Section label="Data" tight>
-        <Row
-          label="Transcription history"
-          desc="Permanently delete every saved session — this can't be undone."
-          last
-        >
-          <button
-            type="button"
-            onClick={clearHistory}
-            className="border-destructive/40 text-destructive hover:bg-destructive/10 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors"
+          <Row
+            label="Transcription prompt"
+            desc="List domain terms, names, or jargon to nudge the speech model toward better accuracy."
           >
-            <Trash2 className="h-3.5 w-3.5" />
-            Clear history
-          </button>
-        </Row>
-      </Section>
+            <input
+              id="settings-transcription-prompt"
+              type="text"
+              value={transcriptionPrompt}
+              onChange={(e) => setTranscriptionPrompt(e.target.value)}
+              onBlur={() => {
+                getClient()
+                  .api.settings[":key"].$put({
+                    param: { key: "transcription_prompt" },
+                    json: { value: transcriptionPrompt },
+                  })
+                  .catch(() => {});
+              }}
+              placeholder="e.g. TypeScript, React, Kubernetes, JIRA…"
+              className="border-border bg-card text-foreground w-full max-w-md rounded-lg border px-3 py-2 text-sm"
+            />
+          </Row>
+
+          <Row
+            label="Sound feedback"
+            desc="Soft chimes at the start and end of recording."
+            last
+          >
+            <div className="flex items-center gap-2.5">
+              {soundEnabled ? (
+                <Volume2 className="text-muted-foreground h-4 w-4 shrink-0" />
+              ) : (
+                <VolumeOff className="text-muted-foreground h-4 w-4 shrink-0" />
+              )}
+              <Toggle on={soundEnabled} onChange={handleSoundToggle} />
+            </div>
+          </Row>
+        </Section>
+
+        <Section label="Display">
+          <Row label="Theme" desc="Light, dark, or follow your system.">
+            <Segment
+              options={themeOptions.map((o) => ({
+                id: o.value,
+                label: o.label,
+                icon: o.icon,
+              }))}
+              active={theme ?? "system"}
+              onSelect={handleThemeChange}
+            />
+          </Row>
+          <Row
+            label="Widget position"
+            desc="Where the floating pill appears on your screen."
+            last
+          >
+            <Segment
+              compact
+              options={[
+                { id: "bottom-center", label: "Bottom · Center" },
+                { id: "bottom-right", label: "Bottom · Right" },
+                { id: "top-center", label: "Top · Center" },
+                { id: "top-right", label: "Top · Right" },
+              ]}
+              active={pillPosition}
+              onSelect={handlePillPositionChange}
+            />
+          </Row>
+        </Section>
+
+        <Section label="Permissions">
+          <Row
+            label="Microphone"
+            desc="Required to capture audio for transcription."
+          >
+            <PermissionControl
+              granted={micStatus === "granted"}
+              checking={micStatus === "unknown"}
+              actionLabel={
+                micStatus === "denied" && isMac
+                  ? "Open Settings"
+                  : micStatus === "granted"
+                    ? null
+                    : "Allow"
+              }
+              external={micStatus === "denied" && isMac}
+              onAction={
+                micStatus === "denied" && isMac ? openMicSettings : requestMic
+              }
+            />
+          </Row>
+          <Row
+            label="Accessibility"
+            desc={
+              isMac
+                ? "Required to detect the global hotkey and paste into other apps. Toggle Freestyle on under System Settings › Privacy & Security › Accessibility."
+                : "Required to detect the global hotkey and paste into other apps."
+            }
+            last
+          >
+            <PermissionControl
+              granted={accessibilityStatus === true}
+              checking={accessibilityStatus === null}
+              actionLabel={
+                accessibilityStatus === true
+                  ? null
+                  : isMac
+                    ? "Open Settings"
+                    : null
+              }
+              external={isMac}
+              onAction={openAccessibility}
+              note={
+                !isMac && accessibilityStatus !== true
+                  ? "Auto-granted"
+                  : undefined
+              }
+            />
+          </Row>
+        </Section>
+
+        <Section label="Data" tight>
+          <Row
+            label="Transcription history"
+            desc="Permanently delete every saved session — this can't be undone."
+            last
+          >
+            <button
+              type="button"
+              onClick={clearHistory}
+              className="border-destructive/40 text-destructive hover:bg-destructive/10 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Clear history
+            </button>
+          </Row>
+        </Section>
+      </div>
     </div>
   );
 }
