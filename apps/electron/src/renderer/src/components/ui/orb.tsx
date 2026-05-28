@@ -145,7 +145,10 @@ function Scene({
     const apply = () => {
       if (!circleRef.current) return;
       const isDark = document.documentElement.classList.contains("dark");
-      circleRef.current.material.uniforms.uInverted.value = isDark ? 1 : 0;
+      const u = circleRef.current.material.uniforms;
+      u.uInverted.value = isDark ? 1 : 0;
+      u.uRampDark.value.set(isDark ? 0x1e1c16 : 0x000000);
+      u.uRampLight.value.set(isDark ? 0xffffff : 0xfbf8ee);
     };
 
     apply();
@@ -244,6 +247,13 @@ function Scene({
       uInputVolume: new Uniform(0),
       uOutputVolume: new Uniform(0),
       uOpacity: new Uniform(0),
+      // Ramp endpoints match --card in light/dark mode
+      uRampDark: new Uniform(
+        isDark ? new Color(0x1e1c16) : new Color(0x000000),
+      ),
+      uRampLight: new Uniform(
+        isDark ? new Color(0xffffff) : new Color(0xfbf8ee),
+      ),
     };
   }, [perlinNoiseTexture, offsets]);
 
@@ -298,6 +308,8 @@ uniform vec3 uColor2;
 uniform float uInputVolume;
 uniform float uOutputVolume;
 uniform float uOpacity;
+uniform vec3 uRampDark;
+uniform vec3 uRampLight;
 uniform sampler2D uPerlinTexture;
 varying vec2 vUv;
 
@@ -478,11 +490,11 @@ void main() {
     vec3 ringColor = vec3(1.0); // White ring color
     color.rgb = 1.0 - (1.0 - color.rgb) * (1.0 - ringColor * totalRingAlpha);
 
-    // Define colours to ramp against greyscale (could increase the amount of colours in the ramp)
-    vec3 color1 = vec3(0.0, 0.0, 0.0); // Black
-    vec3 color2 = uColor1; // Darker Color
-    vec3 color3 = uColor2; // Lighter Color
-    vec3 color4 = vec3(1.0, 1.0, 1.0); // White
+    // Define colours to ramp against greyscale
+    vec3 color1 = uRampDark;   // Dark end (matches --card in dark mode)
+    vec3 color2 = uColor1;     // Darker accent
+    vec3 color3 = uColor2;     // Lighter accent
+    vec3 color4 = uRampLight;  // Light end (matches --card in light mode)
 
     // Convert grayscale color to the color ramp
     float luminance = mix(color.r, 1.0 - color.r, uInverted);
