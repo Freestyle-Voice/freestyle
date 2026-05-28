@@ -18,7 +18,6 @@ import FormatsPage from "@renderer/pages/settings/formats";
 import GeneralSettingsPage from "@renderer/pages/settings/general";
 import HistoryPage from "@renderer/pages/settings/history";
 import ModelsPage from "@renderer/pages/settings/models";
-import PermissionsPage from "@renderer/pages/settings/permissions";
 import AppShell from "@renderer/pages/shell";
 import TodayPage from "@renderer/pages/today";
 import { ThemeProvider } from "next-themes";
@@ -67,7 +66,7 @@ initApiBase().then(() => {
                   <Route path="/settings/feedback" element={<FeedbackPage />} />
                   <Route
                     path="/settings/permissions"
-                    element={<PermissionsPage />}
+                    element={<Navigate to="/settings" replace />}
                   />
                 </Route>
               </Route>

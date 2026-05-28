@@ -9,7 +9,6 @@ import {
   Cpu,
   FileText,
   MessageSquare,
-  Shield,
   Sliders,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -40,16 +39,10 @@ const navItems: NavItem[] = [
   { to: "/settings/models", label: "Models", icon: Cpu, shortcut: "5" },
   { to: "/settings", label: "Settings", icon: Sliders, shortcut: "6" },
   {
-    to: "/settings/permissions",
-    label: "Permissions",
-    icon: Shield,
-    shortcut: "7",
-  },
-  {
     to: "/settings/feedback",
     label: "Feedback",
     icon: MessageSquare,
-    shortcut: "8",
+    shortcut: "7",
   },
 ];
 

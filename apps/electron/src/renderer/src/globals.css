@@ -153,6 +153,9 @@
   ::selection {
     background-color: rgba(107, 143, 18, 0.25);
   }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 .serif {

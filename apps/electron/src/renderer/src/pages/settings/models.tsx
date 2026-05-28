@@ -489,7 +489,7 @@ export default function ModelsPage(): React.JSX.Element {
     <div className="space-y-7">
       <PageHeader title="Models" subtitle="" />
 
-      {hasAnyProvider ? (
+      {hasAnyProvider && (
         <PairCard
           voice={defaultVoice}
           llm={defaultLlm}
@@ -499,8 +499,6 @@ export default function ModelsPage(): React.JSX.Element {
           onChangeLlm={() => openPicker("llm")}
           pickerOpen={pickerOpen}
         />
-      ) : (
-        <EmptyHero onPick={() => openPicker("voice")} />
       )}
 
       {/* Inline picker — appears below the pair card */}
@@ -1321,41 +1319,6 @@ function ProviderCard({
         </button>
       </div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// EmptyHero — the editorial "first run" pair card with a Voice CTA
-// ---------------------------------------------------------------------------
-
-function EmptyHero({ onPick }: { onPick: () => void }): React.JSX.Element {
-  return (
-    <section className="border-border bg-card rounded-[14px] border p-6">
-      <div className="flex items-center gap-2.5">
-        <Eyebrow text="Voice · required" accent />
-      </div>
-      <div className="mt-3">
-        <div
-          className="serif-italic text-muted-foreground"
-          style={{ fontSize: 30, lineHeight: 1.1 }}
-        >
-          Pick your first model.
-        </div>
-        <p className="text-muted-foreground mt-2 max-w-[480px] text-[13px] leading-relaxed">
-          Most people start with Groq — it's the fastest. You'll paste an API
-          key once, and Freestyle remembers it.
-        </p>
-      </div>
-      <div className="mt-4">
-        <button
-          type="button"
-          onClick={onPick}
-          className="bg-foreground text-background hover:bg-foreground/90 rounded-[7px] px-3 py-1.5 text-[12.5px] font-medium"
-        >
-          Choose a voice model
-        </button>
-      </div>
-    </section>
   );
 }
 
