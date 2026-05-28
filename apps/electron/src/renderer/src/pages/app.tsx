@@ -761,13 +761,7 @@ export default function AppPage(): React.JSX.Element {
 
   return (
     <div
-      className={`flex h-screen w-screen justify-center select-none ${
-        pillAlign === "start"
-          ? "items-start pt-1"
-          : pillAlign === "end"
-            ? "items-end pb-1"
-            : "items-center"
-      }`}
+      className="flex h-screen w-screen justify-center items-end select-none"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <style>
@@ -824,7 +818,13 @@ export default function AppPage(): React.JSX.Element {
         `}
       </style>
 
-      <div style={{ position: "relative" }}>
+      <div
+        style={{
+          position: "relative",
+          marginBottom: pillAlign === "end" ? 6 : "auto",
+          marginTop: pillAlign === "start" ? 6 : "auto",
+        }}
+      >
         {isReRecording && (
           <div
             className={
