@@ -150,11 +150,12 @@ function getAppWindowPosition(): { x: number; y: number } {
   // justify-end). Push bottom positions 10px past the work area edge
   // so the pill sits closer to the dock/taskbar.
   const bottomOverlap = 14;
+  const topOverlap = -14;
   switch (position) {
     case "top-center":
-      return { x: Math.round((width - APP_WIDTH) / 2), y: 0 };
+      return { x: Math.round((width - APP_WIDTH) / 2), y: topOverlap };
     case "top-right":
-      return { x: width - APP_WIDTH, y: 0 };
+      return { x: width - APP_WIDTH, y: topOverlap };
     case "bottom-right":
       return {
         x: width - APP_WIDTH,
