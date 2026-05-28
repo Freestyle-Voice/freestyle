@@ -54,6 +54,7 @@ export class Streamer {
   }
 
   async startCapture(stream: MediaStream): Promise<void> {
+    this.stopCapture();
     this.capturing = true;
     this.pendingChunks = [];
     this.pcmChunks = [];
@@ -109,6 +110,7 @@ export class Streamer {
   }
 
   getWavBlob(): Blob | null {
+    this.stopCapture();
     if (this.pcmSampleCount === 0) return null;
     const blob = encodeWavFromInt16(
       this.pcmChunks,
