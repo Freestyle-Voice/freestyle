@@ -41,7 +41,7 @@ import { pasteIntoFocusedApp } from "./paste";
 
 const DEFAULT_PORT = 4649;
 const APP_WIDTH = 396;
-const APP_HEIGHT = 160;
+const APP_HEIGHT = 100;
 const APP_BOTTOM_MARGIN = 0;
 
 // ---------------------------------------------------------------------------
