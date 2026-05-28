@@ -56,7 +56,8 @@
         }
       ],
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      "./plugins/withKeyboardExtension"
     ],
     "experiments": {
       "typedRoutes": true,
