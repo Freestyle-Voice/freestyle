@@ -57,16 +57,18 @@ const stream = new Hono().get(
         defaults.voice.model_id,
       );
 
+      const modelShort = stripProviderPrefix(defaults.voice.model_id);
+
       ws.send(
         JSON.stringify({
           type: "config",
-          model: stripProviderPrefix(defaults.voice.model_id),
+          model: modelShort,
           streaming: canStream,
         }),
       );
 
       if (!canStream) {
-        ws.close();
+        ws.send(JSON.stringify({ type: "session.ready", model: modelShort }));
         return;
       }
 
@@ -173,12 +175,9 @@ const stream = new Hono().get(
             upstream = null;
           },
           onClose: () => {
+            // Deepgram closes idle upstream sockets; reconnect on the next "start"
+            // message instead of immediately to avoid session races.
             upstream = null;
-            if (!closed) {
-              try {
-                connectUpstream(ws);
-              } catch {}
-            }
           },
         },
       });

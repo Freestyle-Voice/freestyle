@@ -20,24 +20,29 @@ export function providerOptionsFromBias(
   return undefined;
 }
 
-export async function transcribeDeepgramWithBias(
+/** Pre-recorded Deepgram /v1/listen (client sends WAV from the electron app). */
+export async function transcribeDeepgramListen(
   opts: BiasTranscribeParams,
-  bias: Extract<
+  bias?: Extract<
     AsrVocabularyBias,
     { kind: "deepgram-keyterms" | "deepgram-keywords" }
-  >,
+  > | null,
 ): Promise<TranscribeResult> {
   const short = stripProviderPrefix(opts.model);
-  const params = new URLSearchParams({ model: short });
+  const params = new URLSearchParams({
+    model: short,
+    punctuate: "true",
+    smart_format: "true",
+  });
   if (opts.language && opts.language !== "auto") {
     params.set("language", opts.language);
   }
 
-  if (bias.kind === "deepgram-keyterms") {
+  if (bias?.kind === "deepgram-keyterms") {
     for (const term of bias.terms) {
       params.append("keyterm", term);
     }
-  } else {
+  } else if (bias?.kind === "deepgram-keywords") {
     for (const word of bias.terms) {
       params.append("keywords", `${word}:1.5`);
     }
@@ -47,7 +52,7 @@ export async function transcribeDeepgramWithBias(
     method: "POST",
     headers: {
       Authorization: `Token ${opts.apiKey}`,
-      "Content-Type": "application/octet-stream",
+      "Content-Type": "audio/wav",
     },
     body: Buffer.from(opts.audio),
   });

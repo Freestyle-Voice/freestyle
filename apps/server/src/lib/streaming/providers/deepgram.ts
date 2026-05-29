@@ -2,7 +2,7 @@ import { createDeepgram } from "@ai-sdk/deepgram";
 import WebSocket from "ws";
 import {
   appendDeepgramBiasToParams,
-  transcribeDeepgramWithBias,
+  transcribeDeepgramListen,
 } from "../transcribe-bias.js";
 import type {
   StreamingSessionOptions,

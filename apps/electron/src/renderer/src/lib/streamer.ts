@@ -100,6 +100,7 @@ export class Streamer {
       (this.pcmSampleCount / TARGET_RATE) * 1000,
     );
     this.stopCapture();
+    this.flushPendingChunks();
     this.sendJSON({ type: "commit", audioDurationMs });
   }
 
@@ -148,7 +149,7 @@ export class Streamer {
   private sendAudio(chunk: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN && this.sessionReady) {
       this.ws.send(chunk);
-    } else {
+    } else if (this.capturing) {
       this.pendingChunks.push(chunk);
     }
   }

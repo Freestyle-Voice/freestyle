@@ -3,6 +3,7 @@ import {
   createVocabularySchema,
 } from "@freestyle/validations";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useSearchShortcut } from "@renderer/hooks/use-search-shortcut";
 import { getClient } from "@renderer/lib/api";
 import { cn } from "@renderer/lib/utils";
 import {
@@ -142,6 +143,10 @@ export default function VocabularyPage(): React.JSX.Element {
   );
 
   const importRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchShortcutEnabled = !(total === 0 && !search && !showForm);
+
+  useSearchShortcut(searchInputRef, searchShortcutEnabled);
 
   const exportJson = useCallback(async () => {
     try {
@@ -217,6 +222,7 @@ export default function VocabularyPage(): React.JSX.Element {
               <div className="border-border bg-card flex flex-1 items-center gap-2 rounded-lg border px-3 py-2">
                 <Search className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   value={search}
                   onChange={(e) => {

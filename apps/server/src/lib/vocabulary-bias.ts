@@ -13,6 +13,8 @@ export type AsrVocabularyBias =
 
 const PROMPT_CHAR_BUDGET = 900;
 const DEEPGRAM_KEYTERM_MAX = 100;
+/** Keep streaming URLs short — long keyterm lists break the WS handshake. */
+const DEEPGRAM_STREAMING_KEYTERM_MAX = 25;
 const ELEVENLABS_REALTIME_KEYTERM_MAX = 50;
 const ELEVENLABS_TERM_MAX_CHARS = 20;
 const ELEVENLABS_BATCH_TERM_MAX_CHARS = 50;
@@ -129,13 +131,19 @@ export function buildAsrVocabularyBias(
     }
     case "deepgram": {
       if (isNova3Model(short)) {
-        const keyterms = capTerms(capped, DEEPGRAM_KEYTERM_MAX);
+        const max = streaming
+          ? DEEPGRAM_STREAMING_KEYTERM_MAX
+          : DEEPGRAM_KEYTERM_MAX;
+        const keyterms = capTerms(capped, max);
         return keyterms.length > 0
           ? { kind: "deepgram-keyterms", terms: keyterms }
           : null;
       }
       if (isNova2Model(short)) {
-        const keywords = expandNova2Keywords(capped);
+        const max = streaming
+          ? DEEPGRAM_STREAMING_KEYTERM_MAX
+          : DEEPGRAM_KEYTERM_MAX;
+        const keywords = expandNova2Keywords(capTerms(capped, max));
         return keywords.length > 0
           ? { kind: "deepgram-keywords", terms: keywords }
           : null;
