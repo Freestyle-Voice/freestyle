@@ -3,6 +3,7 @@ import {
   isServerBinaryAvailable,
 } from "../../whisper/binary.js";
 import { WHISPER_PROVIDER_ID } from "../../whisper/constants.js";
+import { ensureBinariesDownloaded } from "../../whisper/models.js";
 import {
   ensureServerRunning,
   getServerPort,
@@ -24,6 +25,14 @@ export class WhisperLocalTranscriptionProvider
   async transcribe(opts: TranscribeOptions): Promise<TranscribeResult> {
     const modelId = stripProviderPrefix(opts.model);
 
+    if (
+      !isBinaryAvailable() &&
+      !isServerBinaryAvailable() &&
+      !isServerRunning()
+    ) {
+      await ensureBinariesDownloaded();
+    }
+
     if (isBinaryAvailable()) {
       return transcribeWithWhisper({
         audio: opts.audio,
@@ -38,7 +47,7 @@ export class WhisperLocalTranscriptionProvider
     }
 
     throw new Error(
-      "whisper.cpp binary not found. Run 'pnpm download:whisper-cpp' in the electron app directory.",
+      "whisper.cpp binary not found. The build may have failed — check the logs above.",
     );
   }
 
