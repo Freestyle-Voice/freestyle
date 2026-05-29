@@ -1,83 +1,45 @@
 #!/usr/bin/env node
 
 /**
- * Download pre-built whisper.cpp binaries for the current platform.
+ * Download or build whisper.cpp binaries for development.
  *
  * Usage:
- *   node scripts/download-whisper-cpp.mjs           # current platform only
- *   node scripts/download-whisper-cpp.mjs --all      # all platforms
+ *   node scripts/download-whisper-cpp.mjs
  *
- * Binaries are placed in resources/whisper/<platform>-<arch>/
+ * On Windows: downloads pre-built binaries from GitHub releases.
+ * On macOS/Linux: builds from source (requires cmake + C compiler).
+ *
+ * Binaries are placed in ~/.cache/freestyle/whisper-bin/ (same
+ * location the app uses at runtime, so the dev build picks them up).
  */
 
-import { chmodSync, createWriteStream, existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  copyFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { fileURLToPath } from "node:url";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "..");
+const VERSION = "1.7.5";
+const WIN_VERSION = "1.8.5";
+const BIN_DIR = join(homedir(), ".cache", "freestyle", "whisper-bin");
 
-// whisper.cpp release tag to download
-const WHISPER_VERSION = "v1.7.5";
-const GITHUB_BASE = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_VERSION}`;
-
-// Map of platform-arch to download info
-const PLATFORMS = {
-  "darwin-arm64": {
-    archive: `whisper-${WHISPER_VERSION}-bin-macos-arm64.zip`,
-    binaries: ["whisper-cli", "whisper-server"],
-  },
-  "darwin-x64": {
-    archive: `whisper-${WHISPER_VERSION}-bin-macos-x86_64.zip`,
-    binaries: ["whisper-cli", "whisper-server"],
-  },
-  "linux-x64": {
-    archive: `whisper-${WHISPER_VERSION}-bin-ubuntu-x86_64.zip`,
-    binaries: ["whisper-cli", "whisper-server"],
-  },
-  "win32-x64": {
-    archive: `whisper-${WHISPER_VERSION}-bin-win-x86_64.zip`,
-    binaries: ["whisper-cli.exe", "whisper-server.exe"],
-  },
-};
-
-async function downloadAndExtract(platformKey) {
-  const config = PLATFORMS[platformKey];
-  if (!config) {
-    console.error(`Unknown platform: ${platformKey}`);
-    return;
-  }
-
-  const destDir = join(ROOT, "resources", "whisper", platformKey);
-  if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
-
-  const allExist = config.binaries.every((b) => existsSync(join(destDir, b)));
-  if (allExist) {
-    console.log(`[${platformKey}] Already downloaded, skipping.`);
-    return;
-  }
-
-  const url = `${GITHUB_BASE}/${config.archive}`;
-  console.log(`[${platformKey}] Downloading ${url}...`);
-
-  const tmpZip = join(destDir, "tmp-whisper.zip");
-
-  const res = await fetch(url, { redirect: "follow" });
-  if (!res.ok) {
-    console.error(
-      `[${platformKey}] Download failed: ${res.status} ${res.statusText}`,
-    );
-    console.error(
-      `Note: You may need to download whisper.cpp binaries manually from`,
-    );
-    console.error(`  https://github.com/ggerganov/whisper.cpp/releases`);
-    console.error(`  and place them in ${destDir}`);
-    return;
-  }
-
-  const fileStream = createWriteStream(tmpZip);
+async function fetchToFile(url, dest) {
+  const res = await fetch(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`);
+  const fileStream = createWriteStream(dest);
   const reader = res.body.getReader();
   const nodeStream = new Readable({
     async read() {
@@ -94,52 +56,121 @@ async function downloadAndExtract(platformKey) {
     },
   });
   await pipeline(nodeStream, fileStream);
+}
 
-  console.log(`[${platformKey}] Extracting...`);
+async function buildFromSource() {
+  if (!existsSync(BIN_DIR)) mkdirSync(BIN_DIR, { recursive: true });
 
-  // Use unzip command (available on macOS, Linux, and Git Bash on Windows)
-  const { execFileSync } = await import("node:child_process");
+  const srcDir = join(BIN_DIR, "whisper.cpp-src");
+  const buildDir = join(srcDir, "build");
+  const tarPath = join(BIN_DIR, `whisper-${VERSION}.tar.gz`);
+  const tarballUrl = `https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v${VERSION}.tar.gz`;
+
+  console.log("Downloading whisper.cpp source...");
+  await fetchToFile(tarballUrl, tarPath);
+
+  console.log("Extracting...");
+  if (existsSync(srcDir)) rmSync(srcDir, { recursive: true, force: true });
+  mkdirSync(srcDir, { recursive: true });
+  execFileSync("tar", ["xzf", tarPath, "-C", srcDir, "--strip-components=1"], {
+    stdio: "pipe",
+  });
   try {
-    execFileSync("unzip", ["-o", "-j", tmpZip, "-d", destDir], {
-      stdio: "pipe",
-    });
-  } catch {
-    console.error(`[${platformKey}] Failed to extract. Please install unzip.`);
-    return;
-  }
-
-  // Clean up
-  const { unlinkSync } = await import("node:fs");
-  try {
-    unlinkSync(tmpZip);
+    unlinkSync(tarPath);
   } catch {}
 
-  // Make binaries executable on Unix
-  if (!platformKey.startsWith("win32")) {
-    for (const bin of config.binaries) {
-      const binPath = join(destDir, bin);
-      if (existsSync(binPath)) {
-        chmodSync(binPath, 0o755);
+  console.log("Building (this may take a minute)...");
+  mkdirSync(buildDir, { recursive: true });
+  execFileSync(
+    "cmake",
+    ["..", "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_SHARED_LIBS=OFF"],
+    {
+      cwd: buildDir,
+      stdio: "inherit",
+      timeout: 60_000,
+    },
+  );
+  execFileSync("cmake", ["--build", ".", "--config", "Release", "-j"], {
+    cwd: buildDir,
+    stdio: "inherit",
+    timeout: 300_000,
+  });
+
+  for (const name of ["whisper-cli", "whisper-server"]) {
+    const built = join(buildDir, "bin", name);
+    if (existsSync(built)) {
+      copyFileSync(built, join(BIN_DIR, name));
+      chmodSync(join(BIN_DIR, name), 0o755);
+    }
+  }
+
+  const libDirs = [join(buildDir, "src"), join(buildDir, "ggml", "src")];
+  for (const libDir of libDirs) {
+    if (!existsSync(libDir)) continue;
+    for (const file of readdirSync(libDir)) {
+      if (file.endsWith(".dylib") || /\.so(\.\d+)*$/.test(file)) {
+        copyFileSync(join(libDir, file), join(BIN_DIR, file));
       }
     }
   }
 
-  console.log(`[${platformKey}] Done.`);
+  if (process.platform === "darwin") {
+    for (const name of ["whisper-cli", "whisper-server"]) {
+      const binPath = join(BIN_DIR, name);
+      if (!existsSync(binPath)) continue;
+      try {
+        execFileSync("install_name_tool", ["-add_rpath", BIN_DIR, binPath], {
+          stdio: "pipe",
+        });
+      } catch {}
+    }
+  }
+
+  try {
+    rmSync(srcDir, { recursive: true, force: true });
+  } catch {}
+  console.log("Done. Binaries at", BIN_DIR);
+}
+
+async function downloadWindows() {
+  if (!existsSync(BIN_DIR)) mkdirSync(BIN_DIR, { recursive: true });
+
+  const url = `https://github.com/ggml-org/whisper.cpp/releases/download/v${WIN_VERSION}/whisper-bin-x64.zip`;
+  const tmpZip = join(BIN_DIR, "whisper-bin.zip");
+
+  console.log("Downloading pre-built Windows binaries...");
+  await fetchToFile(url, tmpZip);
+
+  execFileSync(
+    "powershell",
+    [
+      "-Command",
+      `Expand-Archive -Force -Path '${tmpZip}' -DestinationPath '${BIN_DIR}'`,
+    ],
+    { stdio: "pipe", timeout: 30_000 },
+  );
+
+  try {
+    unlinkSync(tmpZip);
+  } catch {}
+  console.log("Done. Binaries at", BIN_DIR);
 }
 
 async function main() {
-  const all = process.argv.includes("--all");
-  if (all) {
-    for (const key of Object.keys(PLATFORMS)) {
-      await downloadAndExtract(key);
-    }
+  const cli = process.platform === "win32" ? "whisper-cli.exe" : "whisper-cli";
+  if (existsSync(join(BIN_DIR, cli))) {
+    console.log("whisper-cli already exists at", BIN_DIR);
+    return;
+  }
+
+  if (process.platform === "win32") {
+    await downloadWindows();
   } else {
-    const key = `${process.platform}-${process.arch}`;
-    await downloadAndExtract(key);
+    await buildFromSource();
   }
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error(err.message || err);
   process.exit(1);
 });
