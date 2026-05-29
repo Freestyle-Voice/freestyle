@@ -98,9 +98,11 @@ async function downloadAndExtract(platformKey) {
   console.log(`[${platformKey}] Extracting...`);
 
   // Use unzip command (available on macOS, Linux, and Git Bash on Windows)
-  const { execSync } = await import("node:child_process");
+  const { execFileSync } = await import("node:child_process");
   try {
-    execSync(`unzip -o -j "${tmpZip}" -d "${destDir}"`, { stdio: "pipe" });
+    execFileSync("unzip", ["-o", "-j", tmpZip, "-d", destDir], {
+      stdio: "pipe",
+    });
   } catch {
     console.error(`[${platformKey}] Failed to extract. Please install unzip.`);
     return;

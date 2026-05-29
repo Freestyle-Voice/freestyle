@@ -218,7 +218,7 @@ export async function stopServer(): Promise<void> {
     const killTimeout = setTimeout(() => {
       if (done) return;
       try {
-        proc.kill("SIGKILL");
+        proc.kill();
       } catch {}
       done = true;
       resolve();
@@ -231,6 +231,12 @@ export async function stopServer(): Promise<void> {
       resolve();
     });
 
-    proc.kill("SIGTERM");
+    try {
+      proc.kill(process.platform === "win32" ? undefined : "SIGTERM");
+    } catch {
+      done = true;
+      clearTimeout(killTimeout);
+      resolve();
+    }
   });
 }
