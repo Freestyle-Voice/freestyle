@@ -8,6 +8,8 @@ export interface StreamCallbacks {
 
 export interface StreamSession {
   sendAudio(chunk: ArrayBuffer): void;
+  /** Clear per-recording transcript state without tearing down the socket. */
+  reset(): void;
   commit(): void;
   cancel(): void;
   close(): void;

@@ -100,10 +100,9 @@ export class DeepgramTranscriptionProvider implements TranscriptionProvider {
 
     function deliverFinal(): void {
       if (finalDelivered) return;
-      const text = (accumulatedText || partialText).trim();
-      if (!text) return;
       finalDelivered = true;
       commitRequested = false;
+      const text = (accumulatedText || partialText).trim();
       accumulatedText = "";
       partialText = "";
       callbacks.onFinal(text);
@@ -162,6 +161,12 @@ export class DeepgramTranscriptionProvider implements TranscriptionProvider {
       sendAudio(chunk: ArrayBuffer): void {
         if (ws.readyState !== WebSocket.OPEN) return;
         ws.send(chunk);
+      },
+      reset(): void {
+        accumulatedText = "";
+        partialText = "";
+        commitRequested = false;
+        finalDelivered = false;
       },
       commit(): void {
         commitRequested = true;

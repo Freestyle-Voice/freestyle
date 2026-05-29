@@ -92,7 +92,7 @@ const stream = new Hono().get(
         attributes: { provider: defaults.voice.provider },
       });
 
-      upstream = openStreamingSession({
+      const session = openStreamingSession({
         providerId: defaults.voice.provider,
         apiKey,
         model: defaults.voice.model_id,
@@ -183,15 +183,15 @@ const stream = new Hono().get(
           },
           onError: (message) => {
             ws.send(JSON.stringify({ type: "error", message }));
-            upstream = null;
+            if (upstream === session) upstream = null;
           },
           onClose: () => {
-            // Deepgram closes idle upstream sockets; reconnect on the next "start"
-            // message instead of immediately to avoid session races.
-            upstream = null;
+            // Ignore close from a superseded socket (replaced on a later "start").
+            if (upstream === session) upstream = null;
           },
         },
       });
+      upstream = session;
     }
 
     return {
@@ -258,10 +258,18 @@ const stream = new Hono().get(
             audioDurationMs = 0;
             pendingAudioChunks = [];
             if (upstream) {
-              try {
-                upstream.close();
-              } catch {}
-              upstream = null;
+              upstream.reset();
+              flushPendingAudio();
+              const voice = voiceDefaults ?? getDefaultModels().voice;
+              if (voice) {
+                ws.send(
+                  JSON.stringify({
+                    type: "session.ready",
+                    model: stripProviderPrefix(voice.model_id),
+                  }),
+                );
+              }
+              break;
             }
             try {
               connectUpstream(ws);

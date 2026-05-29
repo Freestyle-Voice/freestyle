@@ -117,6 +117,12 @@ export class OpenAITranscriptionProvider implements TranscriptionProvider {
         if (ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
       },
+      reset(): void {
+        partialText = "";
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
+        }
+      },
       cancel(): void {
         if (ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ type: "input_audio_buffer.clear" }));

@@ -227,6 +227,11 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
           audioChunkMessage(Buffer.from(chunk).toString("base64"), false),
         );
       },
+      reset(): void {
+        accumulatedText = "";
+        partialText = "";
+        isFinalCommit = false;
+      },
       commit(): void {
         stopAutoCommit();
         isFinalCommit = true;
