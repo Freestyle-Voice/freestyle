@@ -96,7 +96,11 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
     const model = stripProviderPrefix(opts.model).endsWith("_realtime")
       ? opts.model.replace(/_realtime$/, "")
       : opts.model;
-    return transcribeWithAiSdk({ ...opts, model }, createElevenLabs);
+    return transcribeWithAiSdk(
+      { ...opts, model },
+      createElevenLabs,
+      this.providerId,
+    );
   }
 
   supportsStreaming(modelId: string): boolean {
