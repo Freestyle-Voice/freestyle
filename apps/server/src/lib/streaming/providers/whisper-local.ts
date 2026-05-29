@@ -24,6 +24,7 @@ export class WhisperLocalTranscriptionProvider
 
   async transcribe(opts: TranscribeOptions): Promise<TranscribeResult> {
     const modelId = stripProviderPrefix(opts.model);
+    const isDev = process.env.NODE_ENV !== "production";
 
     if (
       !isBinaryAvailable() &&
@@ -33,24 +34,30 @@ export class WhisperLocalTranscriptionProvider
       await ensureBinariesDownloaded();
     }
 
-    // Use the server if it's already running (fast path, model in memory)
     if (isServerRunning()) {
       try {
-        return await transcribeViaServer(opts.audio, getServerPort());
+        const t0 = Date.now();
+        const result = await transcribeViaServer(opts.audio, getServerPort());
+        if (isDev) {
+          console.log(`[whisper] server inference took ${Date.now() - t0}ms`);
+        }
+        return result;
       } catch {
-        // Server returned an error — fall through to CLI
+        // fall through to CLI
       }
     }
 
-    // Use CLI as the reliable fallback
     if (isBinaryAvailable()) {
+      const t0 = Date.now();
       const result = await transcribeWithWhisper({
         audio: opts.audio,
         modelId,
         language: opts.language,
       });
+      if (isDev) {
+        console.log(`[whisper] CLI inference took ${Date.now() - t0}ms`);
+      }
 
-      // Kick off server in the background so the next transcription is faster
       if (isServerBinaryAvailable() && !isServerRunning()) {
         startInBackground(modelId);
       }
