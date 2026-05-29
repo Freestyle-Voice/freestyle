@@ -119,13 +119,11 @@ function withKeyboardXcodeProject(config) {
     const mainGroupId = xcodeProject.getFirstProject().firstProject.mainGroup;
     xcodeProject.addToPbxGroup(group.uuid, mainGroupId);
 
-    // Add source files to the target's compile sources
+    // Add source files to the target's compile sources.
+    // Pass just the filename -- the group's path (FreestyleKeyboard/)
+    // is prepended automatically by the xcode module.
     for (const file of sourceFiles) {
-      xcodeProject.addSourceFile(
-        `${KEYBOARD_EXTENSION_NAME}/${file}`,
-        { target: target.uuid },
-        group.uuid,
-      );
+      xcodeProject.addSourceFile(file, { target: target.uuid }, group.uuid);
     }
 
     // Configure build settings
