@@ -7,13 +7,11 @@
  * 2. Adds a new "FreestyleKeyboard" target to the Xcode project
  * 3. Configures App Groups for shared data between the main app and keyboard
  * 4. Sets the required entitlements and Info.plist for keyboard extensions
- * 5. Embeds the extension in the main app bundle
  */
 const {
   withXcodeProject,
   withEntitlementsPlist,
   withInfoPlist,
-  IOSConfig,
 } = require("expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
@@ -23,22 +21,12 @@ const APP_GROUP_IDENTIFIER = "group.com.freestyle.app.shared";
 const KEYBOARD_BUNDLE_ID_SUFFIX = ".keyboard";
 
 function withKeyboardExtension(config) {
-  // 1. Add App Group entitlement to the main app
   config = withMainAppEntitlements(config);
-
-  // 2. Add App Group to Info.plist
   config = withMainAppInfoPlist(config);
-
-  // 3. Add the keyboard extension target to the Xcode project
   config = withKeyboardXcodeProject(config);
-
   return config;
 }
 
-/**
- * Add App Groups entitlement to the main app so it can share data
- * with the keyboard extension via UserDefaults suite.
- */
 function withMainAppEntitlements(config) {
   return withEntitlementsPlist(config, (mod) => {
     mod.modResults["com.apple.security.application-groups"] = [
@@ -48,38 +36,28 @@ function withMainAppEntitlements(config) {
   });
 }
 
-/**
- * Set up the main app Info.plist
- */
 function withMainAppInfoPlist(config) {
   return withInfoPlist(config, (mod) => {
-    // Store the app group identifier so JS code can read it
     mod.modResults.FreestyleAppGroup = APP_GROUP_IDENTIFIER;
     return mod;
   });
 }
 
-/**
- * Add the keyboard extension target to the Xcode project.
- * This is the main config plugin logic.
- */
 function withKeyboardXcodeProject(config) {
   return withXcodeProject(config, async (mod) => {
     const xcodeProject = mod.modResults;
     const projectRoot = mod.modRequest.projectRoot;
-    const projectName = mod.modRequest.projectName;
     const mainBundleId = config.ios?.bundleIdentifier ?? "com.freestyle.app";
     const keyboardBundleId = mainBundleId + KEYBOARD_BUNDLE_ID_SUFFIX;
 
     const iosDir = path.join(projectRoot, "ios");
     const extensionDir = path.join(iosDir, KEYBOARD_EXTENSION_NAME);
 
-    // Create the extension directory in the ios/ folder
     if (!fs.existsSync(extensionDir)) {
       fs.mkdirSync(extensionDir, { recursive: true });
     }
 
-    // Copy Swift source files from our template directory
+    // Copy Swift source files
     const sourceDir = path.join(projectRoot, "ios-keyboard");
     const sourceFiles = [
       "KeyboardViewController.swift",
@@ -96,18 +74,17 @@ function withKeyboardXcodeProject(config) {
       }
     }
 
-    // Write the Info.plist for the keyboard extension
-    const infoPlistContent = generateKeyboardInfoPlist();
-    fs.writeFileSync(path.join(extensionDir, "Info.plist"), infoPlistContent);
-
-    // Write the entitlements file for the keyboard extension
-    const entitlementsContent = generateKeyboardEntitlements();
+    // Write Info.plist
     fs.writeFileSync(
-      path.join(extensionDir, `${KEYBOARD_EXTENSION_NAME}.entitlements`),
-      entitlementsContent,
+      path.join(extensionDir, "Info.plist"),
+      generateKeyboardInfoPlist(),
     );
 
-    // --- Add the target to the Xcode project ---
+    // Write entitlements
+    fs.writeFileSync(
+      path.join(extensionDir, `${KEYBOARD_EXTENSION_NAME}.entitlements`),
+      generateKeyboardEntitlements(),
+    );
 
     // Check if target already exists (idempotent)
     const existingTarget = xcodeProject.pbxTargetByName(
@@ -117,7 +94,7 @@ function withKeyboardXcodeProject(config) {
       return mod;
     }
 
-    // Add the app extension target
+    // --- Add the target ---
     const target = xcodeProject.addTarget(
       KEYBOARD_EXTENSION_NAME,
       "app_extension",
@@ -125,8 +102,7 @@ function withKeyboardXcodeProject(config) {
       keyboardBundleId,
     );
 
-    // Add source files to the target's build phase
-    const groupName = KEYBOARD_EXTENSION_NAME;
+    // Create a PBX group for the extension files
     const group = xcodeProject.addPbxGroup(
       [
         "KeyboardViewController.swift",
@@ -135,15 +111,15 @@ function withKeyboardXcodeProject(config) {
         "SharedConfig.swift",
         "Info.plist",
       ],
-      groupName,
+      KEYBOARD_EXTENSION_NAME,
       KEYBOARD_EXTENSION_NAME,
     );
 
     // Add the group to the main project group
-    const mainGroup = xcodeProject.getFirstProject().firstProject.mainGroup;
-    xcodeProject.addToPbxGroup(group.uuid, mainGroup);
+    const mainGroupId = xcodeProject.getFirstProject().firstProject.mainGroup;
+    xcodeProject.addToPbxGroup(group.uuid, mainGroupId);
 
-    // Add Swift source files to the target's compile sources build phase
+    // Add source files to the target's compile sources
     for (const file of sourceFiles) {
       xcodeProject.addSourceFile(
         `${KEYBOARD_EXTENSION_NAME}/${file}`,
@@ -152,39 +128,43 @@ function withKeyboardXcodeProject(config) {
       );
     }
 
-    // Configure build settings for the extension target
+    // Configure build settings
     const configurations = xcodeProject.pbxXCBuildConfigurationSection();
     for (const key in configurations) {
-      const config = configurations[key];
+      const cfg = configurations[key];
       if (
-        typeof config === "object" &&
-        config.buildSettings &&
-        config.name &&
-        config.buildSettings.PRODUCT_NAME === `"${KEYBOARD_EXTENSION_NAME}"`
+        typeof cfg === "object" &&
+        cfg.buildSettings &&
+        cfg.name &&
+        cfg.buildSettings.PRODUCT_NAME === `"${KEYBOARD_EXTENSION_NAME}"`
       ) {
-        config.buildSettings.SWIFT_VERSION = "5.0";
-        config.buildSettings.IPHONEOS_DEPLOYMENT_TARGET = "16.0";
-        config.buildSettings.TARGETED_DEVICE_FAMILY = '"1"';
-        config.buildSettings.CODE_SIGN_ENTITLEMENTS = `${KEYBOARD_EXTENSION_NAME}/${KEYBOARD_EXTENSION_NAME}.entitlements`;
-        config.buildSettings.INFOPLIST_FILE = `${KEYBOARD_EXTENSION_NAME}/Info.plist`;
-        config.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = `"${keyboardBundleId}"`;
-        config.buildSettings.GENERATE_INFOPLIST_FILE = "NO";
-        config.buildSettings.CURRENT_PROJECT_VERSION = "1";
-        config.buildSettings.MARKETING_VERSION = "1.0";
-        config.buildSettings.CLANG_ENABLE_MODULES = "YES";
+        cfg.buildSettings.SWIFT_VERSION = "5.0";
+        cfg.buildSettings.IPHONEOS_DEPLOYMENT_TARGET = "16.0";
+        cfg.buildSettings.TARGETED_DEVICE_FAMILY = '"1"';
+        cfg.buildSettings.CODE_SIGN_ENTITLEMENTS = `${KEYBOARD_EXTENSION_NAME}/${KEYBOARD_EXTENSION_NAME}.entitlements`;
+        cfg.buildSettings.INFOPLIST_FILE = `${KEYBOARD_EXTENSION_NAME}/Info.plist`;
+        cfg.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = `"${keyboardBundleId}"`;
+        cfg.buildSettings.GENERATE_INFOPLIST_FILE = "NO";
+        cfg.buildSettings.CURRENT_PROJECT_VERSION = "1";
+        cfg.buildSettings.MARKETING_VERSION = "1.0";
+        cfg.buildSettings.CLANG_ENABLE_MODULES = "YES";
       }
     }
 
-    // Embed the extension in the main app
+    // Add target dependency from the main app to the keyboard extension.
+    // This ensures the extension is built when the main app is built.
+    // The addTarget call with type "app_extension" already registers the
+    // product. We do NOT use addBuildPhase to embed the .appex because
+    // the xcode module's PBXCopyFilesBuildPhase creates an orphaned file
+    // reference that breaks CocoaPods' post-install validation.
+    //
+    // The embedding is handled automatically by Xcode when the extension
+    // target exists as a dependency with the app_extension product type.
     const mainTarget = xcodeProject.getFirstTarget();
-    if (mainTarget) {
-      xcodeProject.addBuildPhase(
-        [`${KEYBOARD_EXTENSION_NAME}.appex`],
-        "PBXCopyFilesBuildPhase",
-        "Embed App Extensions",
-        mainTarget.firstTarget.uuid,
-        "app_extension",
-      );
+    if (mainTarget && target) {
+      xcodeProject.addTargetDependency(mainTarget.firstTarget.uuid, [
+        target.uuid,
+      ]);
     }
 
     return mod;
