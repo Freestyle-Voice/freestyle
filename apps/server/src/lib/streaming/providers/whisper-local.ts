@@ -5,9 +5,9 @@ import {
 import { WHISPER_PROVIDER_ID } from "../../whisper/constants.js";
 import { ensureBinariesDownloaded } from "../../whisper/models.js";
 import {
-  ensureServerRunning,
   getServerPort,
   isServerRunning,
+  startInBackground,
 } from "../../whisper/server.js";
 import { transcribeWithWhisper } from "../../whisper/transcribe.js";
 import type {
@@ -33,22 +33,29 @@ export class WhisperLocalTranscriptionProvider
       await ensureBinariesDownloaded();
     }
 
-    // Prefer whisper-server (model stays loaded in memory, much faster)
-    if (isServerRunning() || isServerBinaryAvailable()) {
+    // Use the server if it's already running (fast path, model in memory)
+    if (isServerRunning()) {
       try {
-        await ensureServerRunning(modelId);
         return await transcribeViaServer(opts.audio, getServerPort());
       } catch {
-        // Fall through to CLI
+        // Server returned an error — fall through to CLI
       }
     }
 
+    // Use CLI as the reliable fallback
     if (isBinaryAvailable()) {
-      return transcribeWithWhisper({
+      const result = await transcribeWithWhisper({
         audio: opts.audio,
         modelId,
         language: opts.language,
       });
+
+      // Kick off server in the background so the next transcription is faster
+      if (isServerBinaryAvailable() && !isServerRunning()) {
+        startInBackground(modelId);
+      }
+
+      return result;
     }
 
     throw new Error(

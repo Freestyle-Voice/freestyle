@@ -101,8 +101,8 @@ async function doStart(modelId: string): Promise<void> {
     const timeout = setTimeout(() => {
       if (settled) return;
       settled = true;
-      reject(new Error("whisper-server failed to start within 30 seconds"));
-    }, 30_000);
+      reject(new Error("whisper-server failed to start within 90 seconds"));
+    }, 90_000);
 
     function onReady() {
       if (settled) return;
