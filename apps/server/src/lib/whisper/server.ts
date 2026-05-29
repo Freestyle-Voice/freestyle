@@ -101,40 +101,75 @@ async function doStart(modelId: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     let stderr = "";
+    const isDev = process.env.NODE_ENV !== "production";
 
     const timeout = setTimeout(() => {
       if (settled) return;
       settled = true;
-      reject(new Error("whisper-server failed to start within 90 seconds"));
+      const lastOutput = stderr.trim().slice(-500);
+      reject(
+        new Error(
+          `whisper-server failed to start within 90 seconds. Last output:\n${lastOutput}`,
+        ),
+      );
     }, 90_000);
+
+    let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 
     function onReady() {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      if (healthCheckInterval) clearInterval(healthCheckInterval);
       serverReady = true;
       resolve();
     }
 
-    proc.stdout?.on("data", (data: Buffer) => {
-      const text = data.toString();
-      if (text.includes("listening") || text.includes("model loaded")) {
+    function checkReady(text: string): void {
+      if (
+        text.includes("listening") ||
+        text.includes("model loaded") ||
+        text.includes("http://") ||
+        text.includes("running on")
+      ) {
         onReady();
       }
+    }
+
+    proc.stdout?.on("data", (data: Buffer) => {
+      const text = data.toString();
+      if (isDev) console.log("[whisper-server:stdout]", text.trimEnd());
+      checkReady(text);
     });
 
     proc.stderr?.on("data", (data: Buffer) => {
       const text = data.toString();
       stderr += text;
-      if (text.includes("listening") || text.includes("model loaded")) {
-        onReady();
-      }
+      if (isDev) console.log("[whisper-server:stderr]", text.trimEnd());
+      checkReady(text);
     });
+
+    // Poll the HTTP endpoint as a fallback readiness check
+    healthCheckInterval = setInterval(async () => {
+      if (settled) {
+        if (healthCheckInterval) clearInterval(healthCheckInterval);
+        return;
+      }
+      try {
+        const res = await fetch(`http://127.0.0.1:${WHISPER_SERVER_PORT}/`, {
+          signal: AbortSignal.timeout(1000),
+        });
+        if (res.ok || res.status === 404 || res.status === 405) {
+          onReady();
+        }
+      } catch {}
+    }, 2000);
 
     proc.on("error", (err) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      if (healthCheckInterval) clearInterval(healthCheckInterval);
       serverProcess = null;
       currentModelId = null;
       reject(new Error(`Failed to start whisper-server: ${err.message}`));
@@ -142,6 +177,7 @@ async function doStart(modelId: string): Promise<void> {
 
     proc.on("close", (code) => {
       clearTimeout(timeout);
+      if (healthCheckInterval) clearInterval(healthCheckInterval);
       clearStabilityTimer();
       const wasReady = serverReady;
       const modelForRestart = currentModelId;
