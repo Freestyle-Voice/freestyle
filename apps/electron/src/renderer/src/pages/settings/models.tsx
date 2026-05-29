@@ -84,6 +84,7 @@ interface WhisperModelDef {
 
 interface WhisperStatus {
   binaryAvailable: boolean;
+  binaryDownloading: boolean;
   serverBinaryAvailable: boolean;
   serverRunning: boolean;
   modelsDir: string;
@@ -288,15 +289,17 @@ export default function ModelsPage(): React.JSX.Element {
 
   // Poll whisper status while a download is active
   useEffect(() => {
-    const hasActiveDownload = whisperStatus?.models.some(
-      (m) => m.status === "downloading" || m.status === "verifying",
-    );
+    const hasActiveDownload =
+      whisperStatus?.binaryDownloading ||
+      whisperStatus?.models.some(
+        (m) => m.status === "downloading" || m.status === "verifying",
+      );
     if (!hasActiveDownload) return;
     const interval = setInterval(() => {
       loadWhisperStatus().then((data) => {
-        // If download just finished, reload available models
         if (
           data &&
+          !data.binaryDownloading &&
           !data.models.some(
             (m) => m.status === "downloading" || m.status === "verifying",
           )
@@ -1180,23 +1183,28 @@ function LocalWhisperSection({
         device. Download a model to get started.
       </p>
 
-      {whisperStatus && !whisperStatus.binaryAvailable && (
-        <div className="border-destructive/30 bg-destructive/5 flex items-start gap-2.5 rounded-[10px] border px-4 py-3">
-          <AlertTriangle className="text-destructive mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <div className="text-[12px] leading-relaxed">
-            <span className="text-foreground font-medium">
-              whisper.cpp binary not found.
-            </span>{" "}
-            <span className="text-muted-foreground">
-              Run{" "}
-              <code className="bg-secondary rounded px-1 py-0.5 text-[11px]">
-                pnpm download:whisper-cpp
-              </code>{" "}
-              in the electron app directory, or download it from the{" "}
-              <span className="text-foreground/80">whisper.cpp releases</span>{" "}
-              page.
-            </span>
+      {whisperStatus &&
+        !whisperStatus.binaryAvailable &&
+        !whisperStatus.binaryDownloading && (
+          <div className="border-destructive/30 bg-destructive/5 flex items-start gap-2.5 rounded-[10px] border px-4 py-3">
+            <AlertTriangle className="text-destructive mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <div className="text-[12px] leading-relaxed">
+              <span className="text-foreground font-medium">
+                whisper.cpp binary not found.
+              </span>{" "}
+              <span className="text-muted-foreground">
+                It will be downloaded automatically when you download a model.
+              </span>
+            </div>
           </div>
+        )}
+
+      {whisperStatus?.binaryDownloading && (
+        <div className="border-border bg-card flex items-center gap-2.5 rounded-[10px] border px-4 py-3">
+          <Loader2 className="text-primary h-3.5 w-3.5 shrink-0 animate-spin" />
+          <span className="text-muted-foreground text-[12px]">
+            Downloading whisper.cpp binary…
+          </span>
         </div>
       )}
 
@@ -1205,6 +1213,7 @@ function LocalWhisperSection({
           const state = whisperStatus.models.find((m) => m.model === def.id);
           const status = state?.status ?? "not_downloaded";
           const isSelected =
+            status === "ready" &&
             defaultVoice?.provider === "local-whisper" &&
             defaultVoice?.model_id === `local-whisper/${def.id}`;
 

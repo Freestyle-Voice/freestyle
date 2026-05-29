@@ -11,6 +11,7 @@ import {
   downloadModel,
   getAllModelStatuses,
   getModelStatus,
+  isBinaryDownloading,
 } from "../lib/whisper/models.js";
 import { isServerRunning, stopServer } from "../lib/whisper/server.js";
 
@@ -18,6 +19,7 @@ const whisper = new Hono()
   .get("/status", (c) => {
     return c.json({
       binaryAvailable: isBinaryAvailable(),
+      binaryDownloading: isBinaryDownloading(),
       serverBinaryAvailable: isServerBinaryAvailable(),
       serverRunning: isServerRunning(),
       modelsDir: getModelsDir(),

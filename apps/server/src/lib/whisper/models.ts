@@ -142,10 +142,6 @@ export async function downloadModel(modelId: string): Promise<void> {
 
   if (isModelDownloaded(model)) return;
 
-  await ensureBinariesDownloaded();
-
-  ensureModelsDir();
-
   const controller = new AbortController();
   const active: ActiveDownload = {
     controller,
@@ -157,6 +153,15 @@ export async function downloadModel(modelId: string): Promise<void> {
     lastBytes: 0,
   };
   activeDownloads.set(modelId, active);
+
+  try {
+    await ensureBinariesDownloaded();
+  } catch (err) {
+    active.error = err instanceof Error ? err.message : String(err);
+    throw err;
+  }
+
+  ensureModelsDir();
 
   const destPath = getModelPath(model);
   const tempPath = `${destPath}.downloading`;
@@ -271,6 +276,10 @@ export function getDownloadedModelPath(modelId: string): string | null {
 // ---------------------------------------------------------------------------
 
 let binaryDownloadPromise: Promise<void> | null = null;
+
+export function isBinaryDownloading(): boolean {
+  return binaryDownloadPromise !== null;
+}
 
 export async function ensureBinariesDownloaded(): Promise<void> {
   const { isBinaryAvailable } = await import("./binary.js");
