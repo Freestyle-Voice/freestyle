@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  HardDrive,
   Keyboard,
   Loader2,
   Mic,
@@ -46,6 +47,7 @@ export default function OnboardingPage(): React.JSX.Element {
   const [accessibilityStatus, setAccessibilityStatus] = useState(false);
 
   // Voice model state
+  const [modelSource, setModelSource] = useState<"cloud" | "local">("cloud");
   const [available, setAvailable] = useState<AvailableModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<AvailableModel | null>(
     null,
@@ -330,7 +332,7 @@ export default function OnboardingPage(): React.JSX.Element {
     }
   }, [llmCleanup, selectedLlm, needsLlmKey, llmKeyForm, navigate]);
 
-  const voiceItems = buildVoiceItems(available, whisperStatus, {
+  const allVoiceItems = buildVoiceItems(available, whisperStatus, {
     selectedModelId: selectedModel?.model_id,
     selectedProvider:
       selectedModel?.provider_id ??
@@ -338,6 +340,11 @@ export default function OnboardingPage(): React.JSX.Element {
     selectedWhisperModelId: selectedWhisperDefId ?? undefined,
     keyProviders: apiKeys,
   });
+
+  const voiceItems =
+    modelSource === "local"
+      ? allVoiceItems.filter((v) => v.kind === "local")
+      : allVoiceItems.filter((v) => v.kind === "cloud");
 
   const llmModels = available.filter(
     (m) =>
@@ -535,7 +542,45 @@ export default function OnboardingPage(): React.JSX.Element {
                 </p>
               </div>
 
-              {/* Unified voice model list */}
+              {/* Source toggle */}
+              <div className="flex justify-center">
+                <div className="border-border bg-secondary inline-flex rounded-md border p-[3px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModelSource("cloud");
+                      setSelectedWhisperDefId(null);
+                    }}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[12px] transition-colors",
+                      modelSource === "cloud"
+                        ? "bg-card border-border text-foreground border font-medium shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Cloud API
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModelSource("local");
+                      setSelectedModel(null);
+                      setNeedsKey(false);
+                    }}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[12px] transition-colors",
+                      modelSource === "local"
+                        ? "bg-card border-border text-foreground border font-medium shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <HardDrive className="h-3 w-3" />
+                    Local
+                  </button>
+                </div>
+              </div>
+
+              {/* Voice model list */}
               <div className="border-border max-h-[340px] overflow-y-auto rounded-[14px] border">
                 {voiceItems.length === 0 && (
                   <div className="flex items-center gap-2 px-5 py-6">
