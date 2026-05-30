@@ -646,6 +646,26 @@ app.whenReady().then(async () => {
       role: "window",
       submenu: [{ role: "minimize" }, { role: "close" }],
     },
+    ...(is.dev
+      ? [
+          {
+            label: "Dev",
+            submenu: [
+              {
+                label: "Reset Onboarding",
+                click: () => {
+                  writeSettings({ onboardingComplete: false });
+                  if (settingsWindow) {
+                    settingsWindow.loadURL(getDashboardURL("/onboarding"));
+                  } else {
+                    showSettingsWindow();
+                  }
+                },
+              },
+            ],
+          },
+        ]
+      : []),
   ]);
   Menu.setApplicationMenu(appMenu);
 
@@ -827,12 +847,6 @@ app.whenReady().then(async () => {
   createTray();
 
   createAppWindow();
-
-  // Dev-only: RESET_ONBOARDING=1 clears the onboarding state so the
-  // onboarding flow can be re-tested without manually editing settings.json.
-  if (is.dev && process.env.RESET_ONBOARDING) {
-    writeSettings({ onboardingComplete: false });
-  }
 
   // Show the onboarding window automatically on first launch
   if (readSettings().onboardingComplete !== true) {
