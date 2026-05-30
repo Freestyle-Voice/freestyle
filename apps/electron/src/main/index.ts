@@ -922,7 +922,9 @@ app.whenReady().then(async () => {
     });
 
     autoUpdater.on("error", (err) => {
-      updateDownloadState = "idle";
+      if (updateDownloadState === "downloading") {
+        updateDownloadState = "idle";
+      }
       settingsWindow?.webContents.send("updater:error", {
         message: err?.message ?? "Update failed",
       });
@@ -1210,22 +1212,8 @@ app.on("window-all-closed", () => {
 // Gracefully shut down the HTTP server and flush Sentry before quitting
 let isUpdaterQuitting = false;
 let isQuitting = false;
-app.on("before-quit", (event) => {
-  if (isUpdaterQuitting) {
-    // Best-effort cleanup without blocking the quit so electron-updater
-    // can launch the installer and restart the app.
-    fetch(`http://127.0.0.1:${serverPort}/api/whisper/server/stop`, {
-      method: "POST",
-    }).catch(() => {});
-    if (httpServer) {
-      httpServer.close();
-      httpServer = null;
-    }
-    return;
-  }
-  if (isQuitting) return;
-  isQuitting = true;
-  event.preventDefault();
+
+function cleanupBeforeQuit(): void {
   fetch(`http://127.0.0.1:${serverPort}/api/whisper/server/stop`, {
     method: "POST",
   }).catch(() => {});
@@ -1233,5 +1221,16 @@ app.on("before-quit", (event) => {
     httpServer.close();
     httpServer = null;
   }
+}
+
+app.on("before-quit", (event) => {
+  if (isUpdaterQuitting) {
+    cleanupBeforeQuit();
+    return;
+  }
+  if (isQuitting) return;
+  isQuitting = true;
+  event.preventDefault();
+  cleanupBeforeQuit();
   Sentry.close(2000).finally(() => app.exit(0));
 });
