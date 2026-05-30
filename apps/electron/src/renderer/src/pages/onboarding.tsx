@@ -11,11 +11,11 @@ import {
   PROVIDER_DISPLAY_NAMES,
   type WhisperStatus,
 } from "@renderer/lib/models";
-import { Recorder } from "@renderer/lib/recorder";
 import { cn } from "@renderer/lib/utils";
 import {
   AlertTriangle,
   Check,
+  ChevronLeft,
   ChevronRight,
   Download,
   ExternalLink,
@@ -28,13 +28,13 @@ import {
   RefreshCw,
   Shield,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 
-type Step = "welcome" | "permissions" | "voice-model" | "test-run";
+type Step = "welcome" | "permissions" | "voice-model";
 
-const STEPS: Step[] = ["welcome", "permissions", "voice-model", "test-run"];
+const STEPS: Step[] = ["welcome", "permissions", "voice-model"];
 
 type ModelSource = "cloud" | "local";
 
@@ -72,15 +72,6 @@ export default function OnboardingPage(): React.JSX.Element {
   const [selectedWhisperModel, setSelectedWhisperModel] = useState<
     string | null
   >(null);
-
-  // Test run state
-  const [testState, setTestState] = useState<
-    "idle" | "recording" | "transcribing" | "done" | "error"
-  >("idle");
-  const [testTranscript, setTestTranscript] = useState("");
-  const [testError, setTestError] = useState("");
-  const recorderRef = useRef<Recorder | null>(null);
-  const startTimeRef = useRef(0);
 
   // Load permissions
   useEffect(() => {
@@ -205,7 +196,7 @@ export default function OnboardingPage(): React.JSX.Element {
     [loadWhisperStatus],
   );
 
-  const saveModelAndContinue = useCallback(async () => {
+  const finishSetup = useCallback(async () => {
     if (needsKey && selectedModel) {
       const valid = await apiKeyForm.trigger();
       if (!valid) return;
@@ -260,7 +251,8 @@ export default function OnboardingPage(): React.JSX.Element {
         }
       }
 
-      setStep("test-run");
+      window.api?.setOnboardingComplete();
+      navigate("/today", { replace: true });
     } catch {
       // stay on voice-model step
     } finally {
@@ -272,93 +264,8 @@ export default function OnboardingPage(): React.JSX.Element {
     needsKey,
     apiKeyForm,
     whisperStatus,
+    navigate,
   ]);
-
-  const finishOnboarding = useCallback(() => {
-    window.api?.setOnboardingComplete();
-    navigate("/today", { replace: true });
-  }, [navigate]);
-
-  // Test run: start recording
-  const startTestRecording = useCallback(async () => {
-    setTestState("recording");
-    setTestTranscript("");
-    setTestError("");
-    startTimeRef.current = Date.now();
-
-    const recorder = new Recorder();
-    recorderRef.current = recorder;
-    try {
-      await recorder.start();
-    } catch (err) {
-      setTestState("error");
-      setTestError(
-        err instanceof Error ? err.message : "Could not access microphone",
-      );
-      recorder.destroy();
-      recorderRef.current = null;
-    }
-  }, []);
-
-  // Test run: stop and transcribe
-  const stopTestRecording = useCallback(async () => {
-    const recorder = recorderRef.current;
-    if (!recorder) return;
-
-    const recordingDuration = Date.now() - startTimeRef.current;
-    if (recordingDuration < 500) {
-      recorder.cancel();
-      recorder.releaseStream();
-      recorderRef.current = null;
-      setTestState("idle");
-      return;
-    }
-
-    setTestState("transcribing");
-
-    try {
-      const wavBlob = await recorder.stop();
-      recorder.releaseStream();
-      recorderRef.current = null;
-
-      const headers: Record<string, string> = {
-        "Content-Type": "audio/wav",
-        "x-audio-duration-ms": String(recordingDuration),
-      };
-
-      const res = await fetch(`${getApiBase()}/api/transcribe`, {
-        method: "POST",
-        body: wavBlob,
-        headers,
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(
-          body?.error || body?.detail || `Transcription failed (${res.status})`,
-        );
-      }
-
-      const data = await res.json();
-      const text = (data.cleaned || data.raw || "").trim();
-      if (text) {
-        setTestTranscript(text);
-        setTestState("done");
-      } else {
-        setTestState("idle");
-      }
-    } catch (err) {
-      setTestState("error");
-      setTestError(err instanceof Error ? err.message : "Transcription failed");
-    }
-  }, []);
-
-  // Cleanup recorder on unmount
-  useEffect(() => {
-    return () => {
-      recorderRef.current?.destroy();
-    };
-  }, []);
 
   const voiceModels = available.filter(
     (m) => m.type === "voice" && CLOUD_VOICE_PROVIDERS.includes(m.provider_id),
@@ -429,6 +336,14 @@ export default function OnboardingPage(): React.JSX.Element {
           {/* Step: Permissions */}
           {step === "permissions" && (
             <div className="space-y-4">
+              <button
+                type="button"
+                onClick={() => setStep("welcome")}
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs"
+              >
+                <ChevronLeft size={14} />
+                Back
+              </button>
               <div className="text-center">
                 <h2 className="text-lg font-semibold">Permissions</h2>
                 <p className="text-muted-foreground mt-1 text-sm">
@@ -529,6 +444,14 @@ export default function OnboardingPage(): React.JSX.Element {
           {/* Step: Voice Model */}
           {step === "voice-model" && (
             <div className="space-y-4">
+              <button
+                type="button"
+                onClick={() => setStep("permissions")}
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs"
+              >
+                <ChevronLeft size={14} />
+                Back
+              </button>
               <div className="text-center">
                 <h2 className="text-lg font-semibold">Choose a Voice Model</h2>
                 <p className="text-muted-foreground mt-1 text-sm">
@@ -639,7 +562,7 @@ export default function OnboardingPage(): React.JSX.Element {
                               e.key === "Enter" &&
                               apiKeyForm.getValues("key").trim()
                             )
-                              saveModelAndContinue();
+                              finishSetup();
                           }}
                         />
                         <button
@@ -825,12 +748,11 @@ export default function OnboardingPage(): React.JSX.Element {
 
               <button
                 type="button"
-                onClick={saveModelAndContinue}
+                onClick={finishSetup}
                 disabled={!canAdvanceFromModel}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium disabled:opacity-50"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 w-full rounded-lg py-3 text-sm font-medium disabled:opacity-50"
               >
-                {saving ? "Setting up..." : "Continue"}
-                {!saving && <ChevronRight size={16} />}
+                {saving ? "Setting up..." : "Finish Setup"}
               </button>
 
               <button
@@ -842,101 +764,6 @@ export default function OnboardingPage(): React.JSX.Element {
                 className="text-muted-foreground hover:text-foreground w-full py-2 text-center text-xs"
               >
                 Skip for now
-              </button>
-            </div>
-          )}
-
-          {/* Step: Test Run */}
-          {step === "test-run" && (
-            <div className="space-y-6">
-              <div className="text-center">
-                <h2 className="text-lg font-semibold">Try It Out</h2>
-                <p className="text-muted-foreground mt-1 text-sm">
-                  Press the button below and say something. Your transcription
-                  will appear in the box.
-                </p>
-              </div>
-
-              {/* Transcript display */}
-              <div
-                className={cn(
-                  "border-border bg-card min-h-[100px] rounded-lg border p-4",
-                  testState === "recording" && "border-primary/50",
-                )}
-              >
-                {testState === "idle" && !testTranscript && (
-                  <p className="text-muted-foreground text-sm italic">
-                    Your transcription will appear here...
-                  </p>
-                )}
-                {testState === "recording" && (
-                  <div className="flex items-center gap-2">
-                    <span className="bg-destructive h-2.5 w-2.5 animate-pulse rounded-full" />
-                    <span className="text-muted-foreground text-sm">
-                      Listening...
-                    </span>
-                  </div>
-                )}
-                {testState === "transcribing" && (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="text-primary h-4 w-4 animate-spin" />
-                    <span className="text-muted-foreground text-sm">
-                      Transcribing...
-                    </span>
-                  </div>
-                )}
-                {(testState === "done" ||
-                  (testState === "idle" && testTranscript)) && (
-                  <p className="text-foreground text-sm leading-relaxed">
-                    {testTranscript}
-                  </p>
-                )}
-                {testState === "error" && (
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="text-destructive mt-0.5 h-4 w-4 shrink-0" />
-                    <p className="text-destructive text-sm">{testError}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Record button */}
-              <div className="flex justify-center">
-                {testState === "recording" ? (
-                  <button
-                    type="button"
-                    onClick={stopTestRecording}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90 flex items-center gap-2 rounded-full px-6 py-3 text-sm font-medium"
-                  >
-                    <span className="h-3 w-3 rounded-sm bg-current" />
-                    Stop Recording
-                  </button>
-                ) : testState === "transcribing" ? (
-                  <button
-                    type="button"
-                    disabled
-                    className="bg-secondary text-muted-foreground flex items-center gap-2 rounded-full px-6 py-3 text-sm font-medium opacity-60"
-                  >
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Processing...
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={startTestRecording}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-2 rounded-full px-6 py-3 text-sm font-medium"
-                  >
-                    <Mic className="h-4 w-4" />
-                    {testTranscript ? "Try Again" : "Start Recording"}
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={finishOnboarding}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 w-full rounded-lg py-3 text-sm font-medium"
-              >
-                {testTranscript ? "Finish Setup" : "Skip & Finish Setup"}
               </button>
             </div>
           )}
