@@ -10,7 +10,6 @@ Sentry.init({
 });
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
@@ -42,7 +41,6 @@ import { pasteIntoFocusedApp } from "./paste";
 const DEFAULT_PORT = 4649;
 const APP_WIDTH = 260;
 const APP_HEIGHT = 90;
-const APP_BOTTOM_MARGIN = 0;
 
 // ---------------------------------------------------------------------------
 // settings.json helpers — single source for read/write of the lightweight
@@ -727,11 +725,7 @@ app.whenReady().then(async () => {
   // (the settings page captures keydown in the DOM). The native binary
   // doesn't need a separate "recording" mode -- the renderer handles it.
   // We still support the IPC protocol for pausing/resuming the primary listener.
-  let recordingActive = false;
-
   ipcMain.on("hotkey-record:start", () => {
-    recordingActive = true;
-
     // Pause the active hotkey listener so it doesn't fire during recording
     if (keyListener) {
       keyListener.stop();
@@ -744,7 +738,6 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.on("hotkey-record:stop", () => {
-    recordingActive = false;
     // Re-register the hotkey listener
     registerHotkey(currentHotkeyAccel ?? undefined);
   });

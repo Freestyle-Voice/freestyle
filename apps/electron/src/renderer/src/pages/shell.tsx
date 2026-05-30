@@ -2,15 +2,7 @@ import markDark from "@renderer/assets/mark-dark.svg";
 import markLight from "@renderer/assets/mark-light.svg";
 import { cn } from "@renderer/lib/utils";
 import type { LucideIcon } from "lucide-react";
-import {
-  Book,
-  BookOpen,
-  Clock,
-  Cpu,
-  FileText,
-  Shield,
-  Sliders,
-} from "lucide-react";
+import { Book, BookOpen, Clock, Cpu, FileText, Sliders } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router";
 
