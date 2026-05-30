@@ -12,9 +12,10 @@ function execFileAsync(path: string, args: string[] = []): Promise<number> {
   return new Promise((resolve, reject) => {
     execFile(path, args, (err) => {
       if (err) {
+        const status = (err as { status?: unknown }).status;
         const exitCode =
-          typeof (err as { status?: unknown }).status === "number"
-            ? (err as { status: number }).status
+          typeof status === "number"
+            ? status
             : typeof err.code === "number"
               ? err.code
               : undefined;
@@ -118,15 +119,6 @@ export async function pasteIntoFocusedApp(text: string): Promise<void> {
     console.log("[paste] text:", JSON.stringify(text));
   }
   if (!text?.trim()) return;
-
-  // Detect if we have native binaries for faster settle times
-  const hasNative =
-    (process.platform === "darwin" &&
-      getNativeBinaryPath("macos-fast-paste") !== null) ||
-    (process.platform === "win32" &&
-      getNativeBinaryPath("windows-fast-paste") !== null) ||
-    (process.platform === "linux" &&
-      getNativeBinaryPath("linux-fast-paste") !== null);
 
   const prior = clipboard.readText();
   clipboard.writeText(text);

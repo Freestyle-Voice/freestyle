@@ -62,7 +62,7 @@ function KeyComboDisplay({
   variant?: "default" | "recording" | "dim";
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex min-w-0 flex-wrap items-center gap-1">
       {keys.map((k, i) => (
         <span key={i} className="flex items-center gap-1">
           {i > 0 && (
@@ -99,6 +99,7 @@ export default function GeneralSettingsPage(): React.JSX.Element {
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [hotkey, setHotkey] = useState("Alt+Space");
+  const [hotkeyMode, setHotkeyMode] = useState<"hold" | "toggle">("hold");
   const [language, setLanguage] = useState("auto");
   const [pillPosition, setPillPosition] = useState("bottom-center");
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -181,6 +182,17 @@ export default function GeneralSettingsPage(): React.JSX.Element {
     }, 30000);
   }, []);
 
+  const handleHotkeyModeChange = useCallback((mode: "hold" | "toggle") => {
+    setHotkeyMode(mode);
+    window.api?.setHotkeyMode(mode);
+    getClient()
+      .api.settings[":key"].$put({
+        param: { key: "hotkey_mode" },
+        json: { value: mode },
+      })
+      .catch(() => {});
+  }, []);
+
   const handleHotkeyRecorded = useCallback((accelerator: string) => {
     setHotkey(accelerator);
     getClient()
@@ -189,7 +201,6 @@ export default function GeneralSettingsPage(): React.JSX.Element {
         json: { value: accelerator },
       })
       .catch(() => {});
-    window.api.updateHotkey(accelerator);
   }, []);
 
   const {
@@ -237,6 +248,13 @@ export default function GeneralSettingsPage(): React.JSX.Element {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.value) setHotkey(data.value);
+      })
+      .catch(() => {});
+    getClient()
+      .api.settings[":key"].$get({ param: { key: "hotkey_mode" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.value === "toggle") setHotkeyMode("toggle");
       })
       .catch(() => {});
     getClient()
@@ -369,7 +387,7 @@ export default function GeneralSettingsPage(): React.JSX.Element {
     >
       <div className="h-9 shrink-0" />
       <div
-        className="flex-1 overflow-auto px-12 pb-12"
+        className="responsive-page-scroll flex-1 overflow-auto"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         <div className="mb-7">
@@ -383,10 +401,10 @@ export default function GeneralSettingsPage(): React.JSX.Element {
         </div>
 
         {updateAvailable && (
-          <div className="border-primary/30 bg-primary/5 mb-6 flex items-center justify-between rounded-lg border px-4 py-3">
-            <div className="flex items-center gap-2">
+          <div className="border-primary/30 bg-primary/5 mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2">
               <Download className="text-primary h-4 w-4" />
-              <span className="text-sm">
+              <span className="min-w-0 text-sm">
                 {updateDownloaded
                   ? `Version ${updateAvailable} ready to install`
                   : `Version ${updateAvailable} available`}
@@ -427,12 +445,19 @@ export default function GeneralSettingsPage(): React.JSX.Element {
         </Section>
 
         <Section label="Recording">
-          <Row label="Hotkey" desc="Hold to record, release to transcribe.">
+          <Row
+            label="Hotkey"
+            desc={
+              hotkeyMode === "toggle"
+                ? "Press the shortcut once to start, press again to stop."
+                : "Hold the shortcut to record, release to transcribe."
+            }
+          >
             {recorderState === "idle" ? (
               <button
                 type="button"
                 onClick={startHotkeyRecording}
-                className="border-border hover:bg-secondary inline-flex items-center gap-3 rounded-lg border px-3.5 py-2 transition-colors"
+                className="border-border hover:bg-secondary inline-flex max-w-full flex-wrap items-center gap-3 rounded-lg border px-3.5 py-2 transition-colors"
               >
                 <Keyboard className="text-muted-foreground h-4 w-4 shrink-0" />
                 <KeyComboDisplay keys={formatAcceleratorKeys(hotkey)} />
@@ -441,7 +466,7 @@ export default function GeneralSettingsPage(): React.JSX.Element {
                 </span>
               </button>
             ) : recorderState === "recording" ? (
-              <div className="border-primary/60 bg-primary/5 inline-flex items-center gap-3 rounded-lg border px-3.5 py-2">
+              <div className="border-primary/60 bg-primary/5 inline-flex max-w-full flex-wrap items-center gap-3 rounded-lg border px-3.5 py-2">
                 <Keyboard className="text-primary h-4 w-4 shrink-0" />
                 {liveKeys.length > 0 ? (
                   <>
@@ -464,7 +489,7 @@ export default function GeneralSettingsPage(): React.JSX.Element {
                 </button>
               </div>
             ) : (
-              <div className="border-primary/60 bg-primary/5 inline-flex items-center gap-3 rounded-lg border px-3.5 py-2">
+              <div className="border-primary/60 bg-primary/5 inline-flex max-w-full flex-wrap items-center gap-3 rounded-lg border px-3.5 py-2">
                 <Keyboard className="text-primary h-4 w-4 shrink-0" />
                 <KeyComboDisplay keys={capturedKeys} variant="recording" />
                 <div className="ml-2 flex items-center gap-2">
@@ -487,15 +512,50 @@ export default function GeneralSettingsPage(): React.JSX.Element {
             )}
           </Row>
 
+          <Row
+            label="Activation"
+            desc={
+              hotkeyMode === "toggle"
+                ? "Press the shortcut once to start, again to stop."
+                : "Push-to-talk while the shortcut is held."
+            }
+          >
+            <div className="border-border bg-card inline-flex w-fit shrink-0 rounded-lg border p-0.5 text-sm">
+              <button
+                type="button"
+                onClick={() => handleHotkeyModeChange("hold")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 transition-colors",
+                  hotkeyMode === "hold"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Hold
+              </button>
+              <button
+                type="button"
+                onClick={() => handleHotkeyModeChange("toggle")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 transition-colors",
+                  hotkeyMode === "toggle"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Toggle
+              </button>
+            </div>
+          </Row>
+
           <Row label="Microphone" desc="Select your audio input device.">
-            <div className="border-border bg-card text-foreground inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+            <div className="border-border bg-card text-foreground flex w-full max-w-md items-center gap-2 rounded-lg border px-3 py-2 text-sm">
               <Mic className="text-muted-foreground h-4 w-4 shrink-0" />
               <select
                 id="settings-microphone"
                 value={selectedDevice}
                 onChange={(e) => handleDeviceChange(e.target.value)}
-                className="bg-transparent outline-none"
-                style={{ minWidth: 240 }}
+                className="w-full min-w-0 truncate bg-transparent pr-6 outline-none"
               >
                 <option value="">System default</option>
                 {devices.map((d) => (
@@ -508,14 +568,13 @@ export default function GeneralSettingsPage(): React.JSX.Element {
           </Row>
 
           <Row label="Language" desc="Hint for the transcription model.">
-            <div className="border-border bg-card text-foreground inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+            <div className="border-border bg-card text-foreground flex w-full max-w-xs items-center gap-2 rounded-lg border px-3 py-2 text-sm">
               <Languages className="text-muted-foreground h-4 w-4 shrink-0" />
               <select
                 id="settings-language"
                 value={language}
                 onChange={(e) => handleLanguageChange(e.target.value)}
-                className="bg-transparent outline-none"
-                style={{ minWidth: 200 }}
+                className="w-full min-w-0 truncate bg-transparent pr-6 outline-none"
               >
                 <option value="auto">Auto-detect</option>
                 <option value="en">English</option>
@@ -720,17 +779,17 @@ function Row({
   return (
     <div
       className={cn(
-        "grid grid-cols-[280px_1fr] items-start gap-9 py-[22px]",
+        "grid grid-cols-1 items-start gap-3 py-[22px] min-[1080px]:grid-cols-[220px_minmax(0,1fr)] min-[1080px]:gap-8 min-[1280px]:grid-cols-[280px_minmax(0,1fr)] min-[1280px]:gap-9",
         !last && "border-border border-b",
       )}
     >
       <div>
         <div className="text-foreground text-[15px] font-medium">{label}</div>
-        <p className="text-muted-foreground mt-0.5 max-w-[260px] text-[12.5px] leading-[1.5]">
+        <p className="text-muted-foreground mt-0.5 text-[12.5px] leading-[1.5]">
           {desc}
         </p>
       </div>
-      <div>{children}</div>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }
@@ -785,7 +844,7 @@ function Segment({
   compact?: boolean;
 }) {
   return (
-    <div className="border-border bg-secondary inline-flex gap-[2px] rounded-[9px] border p-[3px]">
+    <div className="border-border bg-secondary inline-flex max-w-full flex-nowrap gap-[2px] rounded-[9px] border p-[3px]">
       {options.map((o) => {
         const isOn = o.id === active;
         const Icon = o.icon;

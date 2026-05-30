@@ -5,25 +5,33 @@ import {
   localLlmConfigSchema,
 } from "@freestyle/validations";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { getClient } from "@renderer/lib/api";
+import { getApiBase, getClient } from "@renderer/lib/api";
 import { cn } from "@renderer/lib/utils";
 import {
   AlertTriangle,
   Check,
   ChevronRight,
+  CircleDollarSign,
+  Cloud,
   Cpu,
+  Download,
   Eye,
   EyeOff,
   Key,
+  Laptop,
   Loader2,
   Mic,
-  Monitor,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
+  Target,
   Trash2,
+  Wifi,
+  WifiOff,
   X,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -55,11 +63,83 @@ interface ApiKeyEntry {
   created_at: string;
 }
 
+interface WhisperModelDownloadState {
+  model: string;
+  fileName: string;
+  sizeBytes: number;
+  displayName: string;
+  status: "not_downloaded" | "downloading" | "verifying" | "ready" | "error";
+  phase?: "building_binary" | "downloading_model";
+  downloadProgress?: {
+    bytesDownloaded: number;
+    bytesTotal: number;
+    percent: number;
+    speedBps: number;
+  };
+  error?: string;
+}
+
+interface WhisperModelDef {
+  id: string;
+  displayName: string;
+  sizeBytes: number;
+  ramRequired: string;
+  speed: string;
+  quality: string;
+  quantized: boolean;
+}
+
+interface WhisperStatus {
+  binaryAvailable: boolean;
+  binaryDownloading: boolean;
+  serverBinaryAvailable: boolean;
+  serverRunning: boolean;
+  serverFailed: boolean;
+  modelsDir: string;
+  models: WhisperModelDownloadState[];
+  modelDefinitions: WhisperModelDef[];
+}
+
+/**
+ * A single row in the unified voice picker — local (whisper.cpp) and cloud
+ * models share one shape so they live in one list. `local` carries download
+ * state; `cloud` carries pricing/streaming and a key flag.
+ */
+interface VoiceItem {
+  key: string;
+  kind: "local" | "cloud";
+  name: string;
+  provider: string;
+  modelId: string;
+  speed?: number;
+  quality?: number;
+  quantized?: boolean;
+  note?: string;
+  selected: boolean;
+  // local
+  defId?: string;
+  sizeBytes?: number;
+  ram?: string;
+  state?: WhisperModelDownloadState;
+  status?: WhisperModelDownloadState["status"];
+  // cloud
+  cost?: number;
+  streaming?: boolean;
+  hasKey?: boolean;
+  available?: AvailableModel;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const VOICE_PROVIDERS = ["openai", "groq", "deepgram", "elevenlabs"];
+const VOICE_PROVIDERS = [
+  "openai",
+  "groq",
+  "deepgram",
+  "elevenlabs",
+  "local-whisper",
+];
 const LLM_PROVIDERS = [
   "openai",
   "anthropic",
@@ -79,6 +159,84 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   mistral: "Mistral",
   openrouter: "OpenRouter",
   "local-llm": "Local LLM",
+  "local-whisper": "Local Whisper",
+};
+
+/**
+ * Curated speed/quality/pricing for the voice models we surface. Speed and
+ * quality are 1–5 meters; cost is an approximate $/hr of audio. Models not
+ * listed here still appear in the picker, just without meters.
+ */
+const VOICE_META: Record<
+  string,
+  {
+    speed: number;
+    quality: number;
+    cost?: number;
+    streaming?: boolean;
+    note?: string;
+  }
+> = {
+  "groq/whisper-large-v3-turbo": {
+    speed: 5,
+    quality: 3,
+    cost: 0.04,
+    streaming: true,
+    note: "Fastest · cheapest",
+  },
+  "openai/gpt-4o-transcribe": {
+    speed: 3,
+    quality: 5,
+    cost: 0.18,
+    note: "Most accurate",
+  },
+  "openai/gpt-4o-mini-transcribe": { speed: 4, quality: 4, cost: 0.12 },
+  "openai/whisper-1": { speed: 3, quality: 3, cost: 0.06 },
+  "deepgram/nova-3": {
+    speed: 4,
+    quality: 4,
+    cost: 0.26,
+    streaming: true,
+    note: "Low-latency streaming",
+  },
+  "deepgram/nova-2": { speed: 4, quality: 3, cost: 0.22, streaming: true },
+  "elevenlabs/scribe_v1": {
+    speed: 3,
+    quality: 4,
+    cost: 0.4,
+    note: "99 languages",
+  },
+  "elevenlabs/scribe_v2": { speed: 3, quality: 4, cost: 0.4 },
+  "elevenlabs/scribe_v2_realtime": {
+    speed: 4,
+    quality: 4,
+    cost: 0.4,
+    streaming: true,
+  },
+};
+
+/** whisper.cpp speed/quality come as words — map them onto 1–5 meters. */
+const SPEED_RANK: Record<string, number> = {
+  Fastest: 5,
+  "Very Fast": 5,
+  Fast: 4,
+  Medium: 3,
+  Slow: 2,
+};
+const QUALITY_RANK: Record<string, number> = {
+  Basic: 1,
+  Good: 2,
+  Better: 3,
+  High: 4,
+  Best: 5,
+};
+
+/** Short editorial notes for on-device models, keyed by whisper def id. */
+const LOCAL_VOICE_NOTES: Record<string, string> = {
+  base: "Great everyday pick",
+  "base-q5_1": "Great everyday pick, smaller",
+  large: "Best quality, still fast",
+  "medium-q5_0": "High quality, modest size",
 };
 
 /** Editorial empty-state suggestions — surfaced when no providers exist. */
@@ -141,8 +299,12 @@ export default function ModelsPage(): React.JSX.Element {
   const [deleteProvider, setDeleteProvider] = useState<string | null>(null);
   const [deleteBlockedBy, setDeleteBlockedBy] = useState<string[]>([]);
 
+  // Local Whisper
+  const [whisperStatus, setWhisperStatus] = useState<WhisperStatus | null>(
+    null,
+  );
+
   // Local LLM
-  const [useLocalLlm, setUseLocalLlm] = useState(false);
   const localLlmForm = useForm<LocalLlmConfigInput>({
     resolver: zodResolver(localLlmConfigSchema),
     defaultValues: { url: "http://localhost:11434", api_key: "" },
@@ -192,12 +354,6 @@ export default function ModelsPage(): React.JSX.Element {
       if (configRes.ok) {
         const configs: ConfiguredModel[] = await configRes.json();
         setConfigured(configs);
-        const defaultLlmConfig = configs.find(
-          (m) => m.type === "llm" && m.is_default === 1,
-        );
-        if (defaultLlmConfig?.provider === "local-llm") {
-          setUseLocalLlm(true);
-        }
       }
       if (keysRes.ok) setApiKeys(await keysRes.json());
       if (cleanupRes.ok) {
@@ -219,9 +375,48 @@ export default function ModelsPage(): React.JSX.Element {
     }
   }, [localLlmForm.setValue]);
 
+  const loadWhisperStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/whisper/status`);
+      if (res.ok) {
+        const data: WhisperStatus = await res.json();
+        setWhisperStatus(data);
+        return data;
+      }
+    } catch (err) {
+      console.error("Failed to load whisper status:", err);
+    }
+    return null;
+  }, []);
+
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    loadWhisperStatus();
+  }, [loadData, loadWhisperStatus]);
+
+  // Poll whisper status while a download is active
+  useEffect(() => {
+    const hasActiveDownload =
+      whisperStatus?.binaryDownloading ||
+      whisperStatus?.models.some(
+        (m) => m.status === "downloading" || m.status === "verifying",
+      );
+    if (!hasActiveDownload) return;
+    const interval = setInterval(() => {
+      loadWhisperStatus().then((data) => {
+        if (
+          data &&
+          !data.binaryDownloading &&
+          !data.models.some(
+            (m) => m.status === "downloading" || m.status === "verifying",
+          )
+        ) {
+          loadData();
+        }
+      });
+    }, 500);
+    return () => clearInterval(interval);
+  }, [whisperStatus, loadWhisperStatus, loadData]);
 
   // Close the inline picker when mousedown lands outside both the pair card
   // (which holds the Change triggers) and the picker itself. Wrapping refs on
@@ -252,7 +447,6 @@ export default function ModelsPage(): React.JSX.Element {
     (m) => m.type === "llm" && m.is_default === 1,
   );
 
-  const voiceModelsByProvider = groupByProvider(available, "voice");
   const llmModelsByProvider = groupByProvider(available, "llm");
 
   function groupByProvider(
@@ -267,8 +461,9 @@ export default function ModelsPage(): React.JSX.Element {
     for (const m of list) {
       if (m.type !== type) continue;
       if (!allowed.includes(m.provider_id)) continue;
-      // Local LLM has its own dedicated section, not the cloud picker
+      // Local LLM and Local Whisper have their own dedicated sections
       if (type === "llm" && m.provider_id === "local-llm") continue;
+      if (type === "voice" && m.provider_id === "local-whisper") continue;
       let entry = map.get(m.provider_id);
       if (!entry) {
         entry = {
@@ -281,6 +476,12 @@ export default function ModelsPage(): React.JSX.Element {
     }
     return map;
   }
+
+  // Unified voice list: on-device (whisper.cpp) first, then cloud — one list.
+  const voiceItems = buildVoiceItems(available, whisperStatus, {
+    defaultVoice,
+    keyProviders,
+  });
 
   // -------------------------------------------------------------------------
   // Handlers
@@ -311,6 +512,7 @@ export default function ModelsPage(): React.JSX.Element {
     async (model: AvailableModel, type: "voice" | "llm") => {
       if (
         model.provider_id !== "local-llm" &&
+        model.provider_id !== "local-whisper" &&
         !keyProviders.has(model.provider_id)
       ) {
         setPendingModel(model);
@@ -430,6 +632,78 @@ export default function ModelsPage(): React.JSX.Element {
     loadData();
   }, [deleteProvider, configured, loadData]);
 
+  // --- Local Whisper actions (download in place, inside the picker) ---------
+
+  const downloadWhisper = useCallback(
+    async (modelId: string) => {
+      await fetch(`${getApiBase()}/api/whisper/models/${modelId}/download`, {
+        method: "POST",
+      });
+      loadWhisperStatus();
+    },
+    [loadWhisperStatus],
+  );
+
+  const cancelWhisper = useCallback(
+    async (modelId: string) => {
+      await fetch(`${getApiBase()}/api/whisper/models/${modelId}/cancel`, {
+        method: "POST",
+      });
+      loadWhisperStatus();
+    },
+    [loadWhisperStatus],
+  );
+
+  const deleteWhisper = useCallback(
+    async (modelId: string) => {
+      await fetch(`${getApiBase()}/api/whisper/models/${modelId}`, {
+        method: "DELETE",
+      });
+      loadWhisperStatus();
+      loadData();
+    },
+    [loadWhisperStatus, loadData],
+  );
+
+  const selectLocalVoice = useCallback(
+    async (modelId: string, modelName: string) => {
+      await getClient().api.models.configured.$post({
+        json: {
+          provider: "local-whisper",
+          model_id: `local-whisper/${modelId}`,
+          model_name: modelName,
+          type: "voice",
+          is_default: true,
+        },
+      });
+      fetch(`${getApiBase()}/api/whisper/server/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelId }),
+      }).catch(() => {});
+      closePicker();
+      loadData();
+    },
+    [closePicker, loadData],
+  );
+
+  const selectLocalLlmModel = useCallback(
+    async (modelName: string) => {
+      await getClient().api.models.configured.$post({
+        json: {
+          provider: "local-llm",
+          model_id: `local-llm/${modelName}`,
+          model_name: modelName,
+          type: "llm",
+          is_default: true,
+        },
+      });
+      closePicker();
+      loadData();
+    },
+    [closePicker, loadData],
+  );
+
   const testLocalLlm = localLlmForm.handleSubmit(async (data) => {
     setLocalLlmTesting(true);
     setLocalLlmConnected(null);
@@ -500,7 +774,10 @@ export default function ModelsPage(): React.JSX.Element {
     );
   }
 
-  const hasAnyProvider = apiKeys.length > 0;
+  const isLocalWhisperActive = defaultVoice?.provider === "local-whisper";
+  const hasLocalModel =
+    isLocalWhisperActive ||
+    !!whisperStatus?.models.some((m) => m.status === "ready");
 
   // -------------------------------------------------------------------------
   // Render
@@ -510,83 +787,73 @@ export default function ModelsPage(): React.JSX.Element {
     <PageShell>
       <PageHeader
         title="Models"
-        subtitle="Configure voice and language models for transcription."
+        subtitle="Choose how Freestyle listens — on-device for privacy, or cloud for speed and reach. Add an optional model to clean up what you say."
+        offline={isLocalWhisperActive}
       />
-      <div className="space-y-7">
-        {hasAnyProvider && (
-          <div ref={pairCardRef}>
-            <PairCard
-              voice={defaultVoice}
-              llm={defaultLlm}
-              llmCleanup={llmCleanup}
-              onToggleCleanup={setCleanupOn}
-              onChangeVoice={() => openPicker("voice")}
-              onChangeLlm={() => openPicker("llm")}
-              pickerOpen={pickerOpen}
-            />
-          </div>
-        )}
+      <div className="space-y-4">
+        <div ref={pairCardRef}>
+          <PairCard
+            voice={defaultVoice}
+            llm={defaultLlm}
+            llmCleanup={llmCleanup}
+            onToggleCleanup={setCleanupOn}
+            onChangeVoice={() => openPicker("voice")}
+            onChangeLlm={() => {
+              setCleanupOn(true);
+              openPicker("llm");
+            }}
+            pickerOpen={pickerOpen}
+          />
+        </div>
 
         {/* Inline picker — appears below the pair card */}
-        {pickerOpen && (
+        {pickerOpen === "voice" && (
           <div ref={pickerRef}>
-            <ModelPicker
-              type={pickerOpen}
-              modelsByProvider={
-                pickerOpen === "voice"
-                  ? voiceModelsByProvider
-                  : llmModelsByProvider
-              }
-              currentDefault={
-                pickerOpen === "voice" ? defaultVoice : defaultLlm
-              }
-              search={pickerSearch}
-              setSearch={setPickerSearch}
-              keyProviders={keyProviders}
-              onSelect={(m) => selectModel(m, pickerOpen)}
+            <VoicePicker
+              items={voiceItems}
+              binaryDownloading={!!whisperStatus?.binaryDownloading}
+              onSelectCloud={(m) => selectModel(m, "voice")}
+              onSelectLocal={selectLocalVoice}
+              onDownload={downloadWhisper}
+              onCancel={cancelWhisper}
+              onDelete={deleteWhisper}
               onClose={closePicker}
             />
           </div>
         )}
 
-        {/* Local LLM toggle + config — only shown when cleanup is on */}
-        {llmCleanup && hasAnyProvider && (
-          <LocalLlmSection
-            useLocalLlm={useLocalLlm}
-            setUseLocalLlm={setUseLocalLlm}
-            form={localLlmForm}
-            showApiKey={showLocalLlmApiKey}
-            setShowApiKey={setShowLocalLlmApiKey}
-            testing={localLlmTesting}
-            connected={localLlmConnected}
-            error={localLlmError}
-            models={localLlmModels}
-            defaultLlm={defaultLlm}
-            onTest={testLocalLlm}
-            onClearStatus={() => {
-              setLocalLlmConnected(null);
-              setLocalLlmError(null);
-            }}
-            onSelectLocalModel={async (modelName) => {
-              const modelId = `local-llm/${modelName}`;
-              await getClient().api.models.configured.$post({
-                json: {
-                  provider: "local-llm",
-                  model_id: modelId,
-                  model_name: modelName,
-                  type: "llm",
-                  is_default: true,
-                },
-              });
-              loadData();
-            }}
-          />
+        {pickerOpen === "llm" && (
+          <div ref={pickerRef}>
+            <LlmPicker
+              modelsByProvider={llmModelsByProvider}
+              currentDefault={defaultLlm}
+              search={pickerSearch}
+              setSearch={setPickerSearch}
+              keyProviders={keyProviders}
+              onSelectCloud={(m) => selectModel(m, "llm")}
+              onClose={closePicker}
+              localForm={localLlmForm}
+              showLocalApiKey={showLocalLlmApiKey}
+              setShowLocalApiKey={setShowLocalLlmApiKey}
+              localTesting={localLlmTesting}
+              localConnected={localLlmConnected}
+              localError={localLlmError}
+              localModels={localLlmModels}
+              onTestLocal={testLocalLlm}
+              onClearLocalStatus={() => {
+                setLocalLlmConnected(null);
+                setLocalLlmError(null);
+              }}
+              onSelectLocalModel={selectLocalLlmModel}
+            />
+          </div>
         )}
 
         {/* Providers section */}
         <ProvidersSection
           apiKeys={apiKeys}
           configured={configured}
+          showLocalProvider={hasLocalModel}
           onAdd={() => openPicker("voice")}
           onEdit={startEditProvider}
           onDelete={tryDeleteProvider}
@@ -634,6 +901,84 @@ export default function ModelsPage(): React.JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
+// buildVoiceItems — merge on-device (whisper.cpp) + cloud into one list
+// ---------------------------------------------------------------------------
+
+function buildVoiceItems(
+  available: AvailableModel[],
+  whisperStatus: WhisperStatus | null,
+  ctx: {
+    defaultVoice: ConfiguredModel | undefined;
+    keyProviders: Set<string>;
+  },
+): VoiceItem[] {
+  const { defaultVoice, keyProviders } = ctx;
+
+  const local: VoiceItem[] = (whisperStatus?.modelDefinitions ?? []).map(
+    (def) => {
+      const state = whisperStatus?.models.find((m) => m.model === def.id);
+      const modelId = `local-whisper/${def.id}`;
+      return {
+        key: modelId,
+        kind: "local",
+        name: `Whisper ${def.displayName}`,
+        provider: "On-device",
+        modelId,
+        speed: SPEED_RANK[def.speed] ?? 3,
+        quality: QUALITY_RANK[def.quality] ?? 3,
+        quantized: def.quantized,
+        note: LOCAL_VOICE_NOTES[def.id],
+        defId: def.id,
+        sizeBytes: def.sizeBytes,
+        ram: def.ramRequired,
+        state,
+        status: state?.status ?? "not_downloaded",
+        selected:
+          defaultVoice?.provider === "local-whisper" &&
+          defaultVoice?.model_id === modelId,
+      };
+    },
+  );
+
+  const seen = new Set<string>();
+  const cloud: VoiceItem[] = [];
+  for (const m of available) {
+    if (m.type !== "voice") continue;
+    if (m.provider_id === "local-whisper") continue;
+    if (!VOICE_PROVIDERS.includes(m.provider_id)) continue;
+    if (seen.has(m.model_id)) continue;
+    seen.add(m.model_id);
+    const meta = VOICE_META[m.model_id];
+    cloud.push({
+      key: m.model_id,
+      kind: "cloud",
+      name: m.model_name,
+      provider: displayName(m.provider_id, m.provider_name),
+      modelId: m.model_id,
+      speed: meta?.speed,
+      quality: meta?.quality,
+      cost: meta?.cost,
+      streaming: meta?.streaming,
+      note: meta?.note,
+      hasKey: keyProviders.has(m.provider_id),
+      available: m,
+      selected:
+        defaultVoice?.provider === m.provider_id &&
+        defaultVoice?.model_id === m.model_id,
+    });
+  }
+
+  // Curated (meta'd) cloud models first so the strongest picks read at the top.
+  cloud.sort((a, b) => {
+    const am = VOICE_META[a.modelId] ? 0 : 1;
+    const bm = VOICE_META[b.modelId] ? 0 : 1;
+    return am - bm;
+  });
+
+  return [...local, ...cloud];
+}
+
+// ---------------------------------------------------------------------------
 // PageShell — draggable topbar + padded scroll area, matches history/dictionary/formats
 // ---------------------------------------------------------------------------
 
@@ -649,7 +994,7 @@ function PageShell({
     >
       <div className="h-9 shrink-0" />
       <div
-        className="flex-1 overflow-auto px-12 pb-12"
+        className="responsive-page-scroll flex-1 overflow-auto"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         {children}
@@ -659,26 +1004,41 @@ function PageShell({
 }
 
 // ---------------------------------------------------------------------------
-// PageHeader — editorial title with italic accent
+// PageHeader — editorial title with italic accent + offline-ready badge
 // ---------------------------------------------------------------------------
 
 function PageHeader({
   title,
   subtitle,
+  offline,
 }: {
   title: string;
   subtitle?: string;
+  offline?: boolean;
 }): React.JSX.Element {
   return (
-    <div className="mb-7">
-      <h1 className="serif text-foreground m-0 text-[48px] font-normal leading-[0.95] tracking-[-0.025em]">
-        <span className="serif-italic text-primary">{title}</span>
-        <span>. </span>
-      </h1>
-      {subtitle && (
-        <p className="text-muted-foreground mt-2.5 max-w-[580px] text-[14px] leading-[1.5]">
-          {subtitle}
-        </p>
+    <div className="mb-7 flex items-end justify-between gap-4">
+      <div>
+        <h1 className="serif text-foreground m-0 text-[48px] font-normal leading-[0.95] tracking-[-0.025em]">
+          <span className="serif-italic text-primary">{title}</span>
+          <span>. </span>
+        </h1>
+        {subtitle && (
+          <p className="text-muted-foreground mt-2.5 max-w-[480px] text-[14px] leading-[1.5]">
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {offline && (
+        <div className="bg-accent flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5">
+          <WifiOff className="text-accent-foreground h-3 w-3" />
+          <span
+            className="mono text-accent-foreground text-[10px] uppercase"
+            style={{ letterSpacing: "0.1em" }}
+          >
+            Offline ready
+          </span>
+        </div>
       )}
     </div>
   );
@@ -706,7 +1066,7 @@ function PairCard({
   pickerOpen: PickerType;
 }): React.JSX.Element {
   return (
-    <section className="border-border bg-card grid grid-cols-2 gap-6 rounded-[14px] border p-6">
+    <section className="border-border bg-card grid grid-cols-1 gap-6 rounded-[14px] border p-6 min-[820px]:grid-cols-2">
       <PairSide
         kicker="Voice · required"
         modelName={voice?.model_name}
@@ -716,11 +1076,13 @@ function PairCard({
         active={pickerOpen === "voice"}
         onChange={onChangeVoice}
       />
-      <div className="border-border border-l pl-6">
+      <div className="border-border border-t pt-6 min-[820px]:border-l min-[820px]:border-t-0 min-[820px]:pl-6 min-[820px]:pt-0">
         <PairSide
           kicker="LLM cleanup · optional"
-          modelName={llm?.model_name}
-          providerName={llm ? displayName(llm.provider) : undefined}
+          modelName={llmCleanup ? llm?.model_name : undefined}
+          providerName={
+            llmCleanup && llm ? displayName(llm.provider) : undefined
+          }
           cta={llm ? "Change" : "Pick a model"}
           toggle={llmCleanup}
           onToggle={onToggleCleanup}
@@ -875,20 +1237,426 @@ function Toggle({
 }
 
 // ---------------------------------------------------------------------------
-// ModelPicker — inline picker that opens below the pair card
+// Bytes / speed formatting (shared by the voice picker rows)
 // ---------------------------------------------------------------------------
 
-function ModelPicker({
-  type,
+function formatBytes(bytes: number): string {
+  if (bytes < 1_000_000) return `${(bytes / 1_000).toFixed(0)} KB`;
+  if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
+  return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+}
+
+function formatSpeed(bps: number): string {
+  if (bps < 1_000_000) return `${(bps / 1_000).toFixed(0)} KB/s`;
+  return `${(bps / 1_000_000).toFixed(1)} MB/s`;
+}
+
+// ---------------------------------------------------------------------------
+// VoicePicker — unified on-device + cloud list with filter chips & meters
+// ---------------------------------------------------------------------------
+
+const VOICE_FILTERS: {
+  id: string;
+  label: string;
+  icon?: typeof Laptop;
+}[] = [
+  { id: "all", label: "All" },
+  { id: "cloud", label: "Cloud", icon: Cloud },
+  { id: "private", label: "On-device", icon: Laptop },
+  { id: "fast", label: "Fastest", icon: Zap },
+  { id: "accurate", label: "Most accurate", icon: Target },
+  { id: "free", label: "No usage cost", icon: CircleDollarSign },
+];
+
+function applyVoiceFilter(items: VoiceItem[], filter: string): VoiceItem[] {
+  if (filter === "private") return items.filter((m) => m.kind === "local");
+  if (filter === "cloud") return items.filter((m) => m.kind === "cloud");
+  if (filter === "free")
+    return items.filter((m) => m.kind === "local" || m.cost === 0);
+  if (filter === "fast")
+    return items
+      .filter((m) => (m.speed ?? 0) >= 4)
+      .sort((a, b) => (b.speed ?? 0) - (a.speed ?? 0));
+  if (filter === "accurate")
+    return items
+      .filter((m) => (m.quality ?? 0) >= 4)
+      .sort((a, b) => (b.quality ?? 0) - (a.quality ?? 0));
+  return items;
+}
+
+function VoicePicker({
+  items,
+  binaryDownloading,
+  onSelectCloud,
+  onSelectLocal,
+  onDownload,
+  onCancel,
+  onDelete,
+  onClose,
+}: {
+  items: VoiceItem[];
+  binaryDownloading: boolean;
+  onSelectCloud: (m: AvailableModel) => void;
+  onSelectLocal: (defId: string, name: string) => void;
+  onDownload: (defId: string) => void;
+  onCancel: (defId: string) => void;
+  onDelete: (defId: string) => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [filter, setFilter] = useState("all");
+  const list = applyVoiceFilter(items, filter);
+
+  return (
+    <section className="border-border bg-card overflow-hidden rounded-[14px] border shadow-[0_24px_50px_-34px_rgba(20,12,4,0.4)]">
+      <header className="border-border flex items-center gap-2.5 border-b px-5 py-3.5">
+        <Mic className="text-muted-foreground h-3.5 w-3.5" />
+        <span
+          className="mono text-foreground text-[11px] uppercase"
+          style={{ letterSpacing: "0.14em" }}
+        >
+          Choose a voice model
+        </span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Close picker"
+        >
+          <X size={16} />
+        </button>
+      </header>
+
+      {/* filter chips */}
+      <div className="border-border flex flex-wrap items-center gap-2 border-b px-5 py-3">
+        {VOICE_FILTERS.map((f) => {
+          const on = filter === f.id;
+          const Icon = f.icon;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFilter(f.id)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors",
+                on
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:bg-secondary/60",
+              )}
+            >
+              {Icon && <Icon className="h-3 w-3" />}
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {binaryDownloading && (
+        <div className="border-border flex items-center gap-2.5 border-b px-5 py-3">
+          <Loader2 className="text-primary h-3.5 w-3.5 shrink-0 animate-spin" />
+          <span className="text-muted-foreground text-[12px]">
+            Building whisper.cpp from source — this may take a minute…
+          </span>
+        </div>
+      )}
+
+      <div className="max-h-[440px] overflow-y-auto">
+        {list.length === 0 ? (
+          <div className="text-muted-foreground px-5 py-10 text-center text-[13px]">
+            No models match this filter.
+          </div>
+        ) : (
+          list.map((item, i) => (
+            <VoiceRow
+              key={item.key}
+              item={item}
+              first={i === 0}
+              onSelectCloud={onSelectCloud}
+              onSelectLocal={onSelectLocal}
+              onDownload={onDownload}
+              onCancel={onCancel}
+              onDelete={onDelete}
+            />
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Meter({ value }: { value?: number }): React.JSX.Element | null {
+  if (!value) return null;
+  return (
+    <span className="inline-flex items-center gap-[3px]">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <span
+          key={i}
+          className={cn(
+            "h-[5px] w-[5px] rounded-full",
+            i <= value ? "bg-primary" : "bg-border",
+          )}
+        />
+      ))}
+    </span>
+  );
+}
+
+function StatPair({
+  icon: Icon,
+  label,
+  accent,
+}: {
+  icon: typeof Zap;
+  label: string;
+  accent?: boolean;
+}): React.JSX.Element {
+  return (
+    <span className="text-muted-foreground inline-flex items-center gap-1.5 whitespace-nowrap text-[11.5px]">
+      <Icon className={cn("h-3 w-3", accent ? "text-primary" : "")} />
+      {label}
+    </span>
+  );
+}
+
+function VoiceRow({
+  item,
+  first,
+  onSelectCloud,
+  onSelectLocal,
+  onDownload,
+  onCancel,
+  onDelete,
+}: {
+  item: VoiceItem;
+  first: boolean;
+  onSelectCloud: (m: AvailableModel) => void;
+  onSelectLocal: (defId: string, name: string) => void;
+  onDownload: (defId: string) => void;
+  onCancel: (defId: string) => void;
+  onDelete: (defId: string) => void;
+}): React.JSX.Element {
+  const local = item.kind === "local";
+  const status = item.status ?? "not_downloaded";
+  const downloading =
+    local && (status === "downloading" || status === "verifying");
+  const ghostBtn =
+    "border-border hover:bg-secondary flex items-center gap-1.5 rounded-[8px] border px-3 py-2 text-[12.5px] font-medium";
+  const solidBtn =
+    "bg-foreground text-background hover:bg-foreground/90 rounded-[8px] px-3.5 py-2 text-[12.5px] font-medium";
+
+  return (
+    <div
+      className={cn(
+        "group grid grid-cols-[1fr_auto] items-center gap-4 px-5 py-4",
+        !first && "border-border border-t",
+        item.selected && "bg-primary/[0.06]",
+      )}
+    >
+      <div className="min-w-0">
+        {/* title row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-foreground whitespace-nowrap text-[14px] font-semibold">
+            {item.name}
+          </span>
+          <span className="text-muted-foreground whitespace-nowrap text-[12px]">
+            {item.provider}
+          </span>
+          {item.selected && <Check size={15} className="text-primary" />}
+        </div>
+
+        {/* stat strip */}
+        <div className="mt-2 flex flex-wrap items-center gap-4">
+          {item.speed != null && (
+            <span className="inline-flex items-center gap-1.5">
+              <Zap className="text-muted-foreground h-3 w-3" />
+              <Meter value={item.speed} />
+            </span>
+          )}
+          {item.quality != null && (
+            <span className="inline-flex items-center gap-1.5">
+              <Target className="text-muted-foreground h-3 w-3" />
+              <Meter value={item.quality} />
+            </span>
+          )}
+          {local ? (
+            <>
+              {item.sizeBytes != null && (
+                <StatPair icon={Download} label={formatBytes(item.sizeBytes)} />
+              )}
+              {item.ram && <StatPair icon={Cpu} label={`${item.ram} RAM`} />}
+            </>
+          ) : (
+            <>
+              {item.cost != null && (
+                <StatPair
+                  icon={CircleDollarSign}
+                  label={`$${item.cost.toFixed(2)}/hr`}
+                />
+              )}
+              {item.streaming && (
+                <StatPair icon={Wifi} label="Streaming" accent />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* error (local) */}
+        {local && status === "error" && item.state?.error && (
+          <div className="text-destructive mt-1.5 text-[11.5px]">
+            {item.state.error}
+          </div>
+        )}
+
+        {/* download progress (local) */}
+        {downloading && (
+          <div className="mt-2.5 space-y-1">
+            <div className="bg-secondary h-[5px] w-full overflow-hidden rounded-full">
+              {item.state?.phase === "building_binary" ? (
+                <div className="bg-primary h-full w-full animate-pulse rounded-full" />
+              ) : (
+                <div
+                  className="bg-primary h-full rounded-full transition-all"
+                  style={{
+                    width: `${item.state?.downloadProgress?.percent ?? 0}%`,
+                  }}
+                />
+              )}
+            </div>
+            <div className="text-muted-foreground mono flex justify-between text-[10px]">
+              {item.state?.phase === "building_binary" ? (
+                <span>Building whisper.cpp — this may take a minute…</span>
+              ) : item.state?.downloadProgress ? (
+                <>
+                  <span>
+                    {formatBytes(item.state.downloadProgress.bytesDownloaded)} /{" "}
+                    {formatBytes(item.state.downloadProgress.bytesTotal)}
+                  </span>
+                  <span>
+                    {item.state.downloadProgress.speedBps > 0 &&
+                      formatSpeed(item.state.downloadProgress.speedBps)}
+                    {item.state.downloadProgress.percent > 0 &&
+                      ` · ${item.state.downloadProgress.percent}%`}
+                  </span>
+                </>
+              ) : (
+                <span>Verifying…</span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* action */}
+      <div className="flex shrink-0 items-center gap-1.5 justify-self-end">
+        {item.selected ? (
+          <span
+            className="mono text-primary"
+            style={{ fontSize: 10, letterSpacing: "0.14em" }}
+          >
+            SELECTED
+          </span>
+        ) : local ? (
+          <>
+            {status === "ready" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() =>
+                    item.defId && onSelectLocal(item.defId, item.name)
+                  }
+                  className={solidBtn}
+                >
+                  Use
+                </button>
+                <button
+                  type="button"
+                  onClick={() => item.defId && onDelete(item.defId)}
+                  className="text-muted-foreground hover:text-destructive hover:bg-secondary rounded p-1.5 opacity-0 transition-opacity group-hover:opacity-100"
+                  title="Delete model"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </>
+            )}
+            {status === "not_downloaded" && (
+              <button
+                type="button"
+                onClick={() => item.defId && onDownload(item.defId)}
+                className={ghostBtn}
+              >
+                <Download size={13} />
+                {item.sizeBytes != null
+                  ? formatBytes(item.sizeBytes)
+                  : "Download"}
+              </button>
+            )}
+            {downloading && (
+              <button
+                type="button"
+                onClick={() => item.defId && onCancel(item.defId)}
+                className={ghostBtn}
+              >
+                <X size={12} />
+                Cancel
+              </button>
+            )}
+            {status === "error" && (
+              <button
+                type="button"
+                onClick={() => item.defId && onDownload(item.defId)}
+                className={ghostBtn}
+              >
+                <RefreshCw size={12} />
+                Retry
+              </button>
+            )}
+          </>
+        ) : item.hasKey ? (
+          <button
+            type="button"
+            onClick={() => item.available && onSelectCloud(item.available)}
+            className={solidBtn}
+          >
+            Use
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => item.available && onSelectCloud(item.available)}
+            className={ghostBtn}
+          >
+            <Key size={12} />
+            Add key
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LlmPicker — inline picker for LLM cleanup: on-device (local server) + cloud
+// ---------------------------------------------------------------------------
+
+function LlmPicker({
   modelsByProvider,
   currentDefault,
   search,
   setSearch,
   keyProviders,
-  onSelect,
+  onSelectCloud,
   onClose,
+  localForm,
+  showLocalApiKey,
+  setShowLocalApiKey,
+  localTesting,
+  localConnected,
+  localError,
+  localModels,
+  onTestLocal,
+  onClearLocalStatus,
+  onSelectLocalModel,
 }: {
-  type: "voice" | "llm";
   modelsByProvider: Map<
     string,
     { providerName: string; models: AvailableModel[] }
@@ -897,21 +1665,40 @@ function ModelPicker({
   search: string;
   setSearch: (v: string) => void;
   keyProviders: Set<string>;
-  onSelect: (m: AvailableModel) => void;
+  onSelectCloud: (m: AvailableModel) => void;
   onClose: () => void;
+  localForm: ReturnType<typeof useForm<LocalLlmConfigInput>>;
+  showLocalApiKey: boolean;
+  setShowLocalApiKey: (v: boolean) => void;
+  localTesting: boolean;
+  localConnected: boolean | null;
+  localError: string | null;
+  localModels: string[];
+  onTestLocal: (e?: React.BaseSyntheticEvent) => Promise<void>;
+  onClearLocalStatus: () => void;
+  onSelectLocalModel: (modelName: string) => Promise<void>;
 }): React.JSX.Element {
   const q = search.toLowerCase();
-  const Icon = type === "voice" ? Mic : Sparkles;
+
+  // On-device rows: discovered models ∪ the current default (so a previously
+  // chosen local model still shows as selected before the user re-tests).
+  const localNames = new Set(localModels);
+  if (currentDefault?.provider === "local-llm") {
+    localNames.add(currentDefault.model_id.replace(/^local-llm\//, ""));
+  }
+  const localList = [...localNames].filter(
+    (n) => !q || n.toLowerCase().includes(q),
+  );
 
   return (
-    <section className="border-border bg-card overflow-hidden rounded-[14px] border">
+    <section className="border-border bg-card overflow-hidden rounded-[14px] border shadow-[0_24px_50px_-34px_rgba(20,12,4,0.4)]">
       <header className="border-border flex items-center gap-2.5 border-b px-5 py-3.5">
-        <Icon className="text-muted-foreground h-3.5 w-3.5" />
+        <Sparkles className="text-muted-foreground h-3.5 w-3.5" />
         <span
           className="mono text-foreground text-[11px] uppercase"
           style={{ letterSpacing: "0.14em" }}
         >
-          {type === "voice" ? "Pick a voice model" : "Pick an LLM model"}
+          Pick an LLM model
         </span>
         <div className="border-border bg-background ml-3 flex flex-1 items-center gap-2 rounded-md border px-2.5 py-1">
           <Search className="text-muted-foreground h-3.5 w-3.5" />
@@ -932,7 +1719,112 @@ function ModelPicker({
           <X size={16} />
         </button>
       </header>
-      <div className="max-h-[320px] overflow-y-auto">
+
+      <div className="max-h-[440px] overflow-y-auto">
+        {/* On-device group — connect a local server, then pick a model */}
+        <div>
+          <div className="border-border bg-card sticky top-0 z-10 flex items-center gap-2 border-b px-5 py-2">
+            <Laptop className="text-primary h-3 w-3" />
+            <span
+              className="mono text-foreground text-[10px] uppercase"
+              style={{ letterSpacing: "0.14em" }}
+            >
+              On-device
+            </span>
+            <span className="text-muted-foreground text-[11.5px]">
+              Ollama, LM Studio & other OpenAI-compatible servers
+            </span>
+          </div>
+
+          <form
+            onSubmit={onTestLocal}
+            className="border-border space-y-2.5 border-b px-5 py-3.5"
+          >
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                {...localForm.register("url", { onChange: onClearLocalStatus })}
+                placeholder="http://localhost:11434"
+                className={cn(
+                  "border-border bg-background flex-1 rounded-md border px-3 py-2 text-[13px]",
+                  localForm.formState.errors.url && "border-destructive",
+                )}
+              />
+              <button
+                type="submit"
+                disabled={localTesting}
+                className="bg-secondary hover:bg-secondary/80 shrink-0 rounded-md px-3.5 py-2 text-[12.5px] font-medium disabled:opacity-50"
+              >
+                {localTesting ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Testing…
+                  </span>
+                ) : (
+                  "Test"
+                )}
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                type={showLocalApiKey ? "text" : "password"}
+                {...localForm.register("api_key")}
+                placeholder="API key (optional)"
+                className="border-border bg-background w-full rounded-md border px-3 py-2 pr-10 text-[13px]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowLocalApiKey(!showLocalApiKey)}
+                className="text-muted-foreground hover:text-foreground absolute right-3 top-1/2 -translate-y-1/2"
+              >
+                {showLocalApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+            {localConnected === true && (
+              <p className="text-primary text-[12px]">
+                Connected ({localModels.length}{" "}
+                {localModels.length === 1 ? "model" : "models"})
+              </p>
+            )}
+            {localConnected === false && (
+              <p className="text-destructive text-[12px]">{localError}</p>
+            )}
+            {localForm.formState.errors.url && (
+              <p className="text-destructive text-[12px]">
+                {localForm.formState.errors.url.message}
+              </p>
+            )}
+          </form>
+
+          {localList.length === 0 ? (
+            <div className="text-muted-foreground px-5 py-3 text-[12px]">
+              No local models yet — test a connection to list them.
+            </div>
+          ) : (
+            localList.map((name) => {
+              const modelId = `local-llm/${name}`;
+              const isActive =
+                currentDefault?.provider === "local-llm" &&
+                currentDefault?.model_id === modelId;
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => onSelectLocalModel(name)}
+                  className={cn(
+                    "hover:bg-secondary/60 flex w-full items-center gap-2 px-5 py-2 text-left text-[13px]",
+                    isActive && "bg-primary/5",
+                  )}
+                >
+                  <span className="flex-1 truncate">{name}</span>
+                  {isActive && <Check size={14} className="text-primary" />}
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        {/* Cloud groups — one section per provider */}
         {[...modelsByProvider.entries()].map(
           ([providerId, { providerName, models }]) => {
             const filtered = q
@@ -962,7 +1854,7 @@ function ModelPicker({
                     <button
                       key={model.model_id}
                       type="button"
-                      onClick={() => onSelect(model)}
+                      onClick={() => onSelectCloud(model)}
                       className={cn(
                         "hover:bg-secondary/60 flex w-full items-center gap-2 px-5 py-2 text-left text-[13px]",
                         isActive && "bg-primary/5",
@@ -983,233 +1875,25 @@ function ModelPicker({
 }
 
 // ---------------------------------------------------------------------------
-// LocalLlmSection — Cloud/Local toggle + local config when local is on
-// ---------------------------------------------------------------------------
-
-function LocalLlmSection({
-  useLocalLlm,
-  setUseLocalLlm,
-  form,
-  showApiKey,
-  setShowApiKey,
-  testing,
-  connected,
-  error,
-  models,
-  defaultLlm,
-  onTest,
-  onClearStatus,
-  onSelectLocalModel,
-}: {
-  useLocalLlm: boolean;
-  setUseLocalLlm: (v: boolean) => void;
-  form: ReturnType<typeof useForm<LocalLlmConfigInput>>;
-  showApiKey: boolean;
-  setShowApiKey: (v: boolean) => void;
-  testing: boolean;
-  connected: boolean | null;
-  error: string | null;
-  models: string[];
-  defaultLlm: ConfiguredModel | undefined;
-  onTest: (e?: React.BaseSyntheticEvent) => Promise<void>;
-  onClearStatus: () => void;
-  onSelectLocalModel: (modelName: string) => Promise<void>;
-}): React.JSX.Element {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span
-          className="mono text-muted-foreground text-[10px] uppercase"
-          style={{ letterSpacing: "0.14em" }}
-        >
-          LLM Source
-        </span>
-        <div className="border-border bg-secondary ml-2 inline-flex rounded-md border p-[3px]">
-          <SegmentButton
-            active={!useLocalLlm}
-            onClick={() => setUseLocalLlm(false)}
-            icon={<Sparkles className="h-3 w-3" />}
-          >
-            Cloud
-          </SegmentButton>
-          <SegmentButton
-            active={useLocalLlm}
-            onClick={() => setUseLocalLlm(true)}
-            icon={<Monitor className="h-3 w-3" />}
-          >
-            Local
-          </SegmentButton>
-        </div>
-      </div>
-
-      {useLocalLlm && (
-        <form
-          onSubmit={onTest}
-          className="border-border bg-card space-y-3 rounded-[12px] border p-5"
-        >
-          <div className="space-y-1.5">
-            <label
-              htmlFor="models-local-llm-url"
-              className="mono text-muted-foreground block text-[10px] uppercase"
-              style={{ letterSpacing: "0.14em" }}
-            >
-              Endpoint URL
-            </label>
-            <input
-              id="models-local-llm-url"
-              type="text"
-              {...form.register("url", { onChange: onClearStatus })}
-              placeholder="http://localhost:11434"
-              className={cn(
-                "border-border bg-background w-full rounded-md border px-3 py-2 text-[13px]",
-                form.formState.errors.url && "border-destructive",
-              )}
-            />
-            {form.formState.errors.url && (
-              <p className="text-destructive text-xs">
-                {form.formState.errors.url.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <label
-              htmlFor="models-local-llm-api-key"
-              className="mono text-muted-foreground block text-[10px] uppercase"
-              style={{ letterSpacing: "0.14em" }}
-            >
-              API Key <span className="normal-case opacity-60">(optional)</span>
-            </label>
-            <div className="relative">
-              <input
-                id="models-local-llm-api-key"
-                type={showApiKey ? "text" : "password"}
-                {...form.register("api_key")}
-                placeholder="Leave empty if not required"
-                className="border-border bg-background w-full rounded-md border px-3 py-2 pr-10 text-[13px]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="text-muted-foreground hover:text-foreground absolute right-3 top-1/2 -translate-y-1/2"
-              >
-                {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={testing}
-              className="bg-secondary hover:bg-secondary/80 rounded-md px-4 py-1.5 text-[12.5px] font-medium disabled:opacity-50"
-            >
-              {testing ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Testing…
-                </span>
-              ) : (
-                "Test Connection"
-              )}
-            </button>
-            {connected === true && (
-              <span className="text-primary text-xs">
-                Connected ({models.length}{" "}
-                {models.length === 1 ? "model" : "models"})
-              </span>
-            )}
-            {connected === false && (
-              <span className="text-destructive text-xs">{error}</span>
-            )}
-          </div>
-
-          {models.length > 0 && (
-            <div className="border-border space-y-1 border-t pt-3">
-              <span
-                className="mono text-muted-foreground block text-[10px] uppercase"
-                style={{ letterSpacing: "0.14em" }}
-              >
-                Available local models
-              </span>
-              <div className="mt-2 grid grid-cols-2 gap-1.5">
-                {models.map((m) => {
-                  const modelId = `local-llm/${m}`;
-                  const isActive =
-                    defaultLlm?.model_id === modelId &&
-                    defaultLlm?.provider === "local-llm";
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => onSelectLocalModel(m)}
-                      className={cn(
-                        "border-border hover:bg-secondary/60 flex items-center justify-between rounded-md border px-3 py-2 text-left text-[12.5px]",
-                        isActive && "border-primary/40 bg-primary/5",
-                      )}
-                    >
-                      <span className="truncate">{m}</span>
-                      {isActive && (
-                        <Check size={13} className="text-primary shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </form>
-      )}
-    </section>
-  );
-}
-
-function SegmentButton({
-  active,
-  onClick,
-  icon,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 rounded-[5px] px-2.5 py-1 text-[12px] transition-colors",
-        active
-          ? "bg-card border-border text-foreground border font-medium shadow-[0_1px_2px_rgba(20,12,4,0.04)]"
-          : "text-muted-foreground hover:text-foreground border border-transparent",
-      )}
-    >
-      {icon}
-      {children}
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ProvidersSection — list of configured providers as cards (2-col grid)
+// ProvidersSection — providers & keys as a single list (on-device included)
 // ---------------------------------------------------------------------------
 
 function ProvidersSection({
   apiKeys,
   configured,
+  showLocalProvider,
   onAdd,
   onEdit,
   onDelete,
 }: {
   apiKeys: ApiKeyEntry[];
   configured: ConfiguredModel[];
+  showLocalProvider: boolean;
   onAdd: () => void;
   onEdit: (provider: string) => void;
   onDelete: (provider: string) => void;
 }): React.JSX.Element {
-  if (apiKeys.length === 0) {
+  if (apiKeys.length === 0 && !showLocalProvider) {
     return (
       <section className="border-border bg-card rounded-[14px] border border-dashed px-8 py-12 text-center">
         <div className="bg-accent/60 mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl">
@@ -1227,7 +1911,7 @@ function ProvidersSection({
           No providers yet.
         </h2>
         <p className="text-muted-foreground mx-auto mt-2 max-w-[420px] text-[13px] leading-relaxed">
-          Pick a voice model below — paste your API key once, and Freestyle
+          Pick a voice model above — paste your API key once, and Freestyle
           remembers it.
         </p>
         <div className="mx-auto mt-5 flex max-w-[420px] flex-col gap-2">
@@ -1265,93 +1949,78 @@ function ProvidersSection({
   }
 
   return (
-    <section>
-      <div className="mb-3.5 flex items-baseline justify-between">
-        <div>
-          <h2
-            className="serif-italic text-foreground m-0"
-            style={{ fontSize: 24, lineHeight: 1 }}
-          >
-            Providers
-          </h2>
-          <p className="text-muted-foreground mt-1 text-[13px]">
-            Manage API keys. Keys are stored in your system keychain.
-          </p>
-        </div>
+    <section className="pt-3">
+      <div className="mb-3 flex items-center justify-between">
+        <Eyebrow text="Providers & keys" />
         <button
           type="button"
           onClick={onAdd}
-          className="border-border text-foreground hover:bg-secondary flex items-center gap-1.5 rounded-[7px] border px-3 py-1.5 text-[12.5px] font-medium"
+          className="border-border text-foreground hover:bg-secondary flex shrink-0 items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12px] font-medium"
         >
           <Plus size={13} />
           Add provider
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        {apiKeys.map((entry) => (
-          <ProviderCard
+      <div className="border-border bg-card overflow-hidden rounded-[12px] border">
+        {apiKeys.map((entry, i) => (
+          <ProviderRow
             key={entry.provider}
             providerId={entry.provider}
             configured={configured}
+            first={i === 0}
             onEdit={() => onEdit(entry.provider)}
             onDelete={() => onDelete(entry.provider)}
           />
         ))}
+        {showLocalProvider && (
+          <LocalProviderRow
+            first={apiKeys.length === 0}
+            modelCount={
+              configured.filter((m) => m.provider === "local-whisper").length
+            }
+          />
+        )}
       </div>
     </section>
   );
 }
 
-function ProviderCard({
+function ProviderRow({
   providerId,
   configured,
+  first,
   onEdit,
   onDelete,
 }: {
   providerId: string;
   configured: ConfiguredModel[];
+  first: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }): React.JSX.Element {
   const models = configured.filter((m) => m.provider === providerId);
-  const voice = models.find((m) => m.type === "voice");
-  const llm = models.find((m) => m.type === "llm");
-  const activeAs =
-    voice?.is_default === 1
-      ? "voice"
-      : llm?.is_default === 1
-        ? "llm"
-        : undefined;
+  const count = models.length;
 
   return (
-    <div className="group border-border bg-card flex items-center gap-3.5 rounded-[11px] border px-4 py-3.5">
-      <div className="bg-accent/60 border-primary/20 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border">
-        <Key className="text-accent-foreground h-3.5 w-3.5" />
-      </div>
+    <div
+      className={cn(
+        "group flex items-center gap-3 px-[18px] py-[13px]",
+        !first && "border-border border-t",
+      )}
+    >
+      <Key className="text-muted-foreground h-[15px] w-[15px] shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-foreground text-[13.5px] font-medium">
-            {displayName(providerId)}
-          </span>
-          {activeAs && (
-            <span
-              className="mono bg-primary text-primary-foreground rounded-full px-1.5 py-[2px] text-[9px]"
-              style={{ letterSpacing: "0.12em" }}
-            >
-              ACTIVE
-            </span>
-          )}
+        <div className="text-foreground text-[13.5px] font-semibold">
+          {displayName(providerId)}
         </div>
-        <div className="text-muted-foreground mt-0.5 truncate text-[11.5px]">
-          {voice?.model_name && <span>{voice.model_name}</span>}
-          {voice?.model_name && llm?.model_name && <span> · </span>}
-          {llm?.model_name && <span>{llm.model_name}</span>}
-          {!voice?.model_name && !llm?.model_name && (
-            <span>No models configured</span>
-          )}
+        <div className="mono text-muted-foreground mt-0.5 text-[11px]">
+          Key stored in keychain
         </div>
       </div>
+      <span className="text-muted-foreground text-[11.5px]">
+        {count} model{count === 1 ? "" : "s"}
+      </span>
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
         <button
           type="button"
@@ -1359,7 +2028,7 @@ function ProviderCard({
           className="text-muted-foreground hover:text-foreground hover:bg-secondary rounded p-1.5"
           title="Edit API key"
         >
-          <Pencil size={13} />
+          <Pencil size={14} />
         </button>
         <button
           type="button"
@@ -1367,9 +2036,39 @@ function ProviderCard({
           className="text-muted-foreground hover:text-destructive hover:bg-secondary rounded p-1.5"
           title="Delete provider"
         >
-          <Trash2 size={13} />
+          <Trash2 size={14} />
         </button>
       </div>
+    </div>
+  );
+}
+
+function LocalProviderRow({
+  first,
+  modelCount,
+}: {
+  first: boolean;
+  modelCount: number;
+}): React.JSX.Element {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 px-[18px] py-[13px]",
+        !first && "border-border border-t",
+      )}
+    >
+      <Laptop className="text-primary h-[15px] w-[15px] shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="text-foreground text-[13.5px] font-semibold">
+          On-device · whisper.cpp
+        </div>
+        <div className="mono text-muted-foreground mt-0.5 text-[11px]">
+          No key needed · runs locally
+        </div>
+      </div>
+      <span className="text-muted-foreground text-[11.5px]">
+        {modelCount} model{modelCount === 1 ? "" : "s"}
+      </span>
     </div>
   );
 }

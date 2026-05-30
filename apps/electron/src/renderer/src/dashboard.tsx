@@ -27,7 +27,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router";
 
 function PagePad(): React.JSX.Element {
   return (
-    <div className="px-12 py-9">
+    <div className="responsive-route-pad">
       <Outlet />
     </div>
   );
