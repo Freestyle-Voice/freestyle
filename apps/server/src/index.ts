@@ -43,7 +43,6 @@ const app = new Hono()
   .route("/api/dictionary", dictionary)
   .route("/api/formats", formats)
   .route("/api/post-process", postProcessRoute)
-
   .route("/api/whisper", whisper)
   .route("/mcp", mcp)
   .route("/stream", stream);
