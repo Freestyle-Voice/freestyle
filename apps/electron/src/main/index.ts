@@ -10,7 +10,6 @@ Sentry.init({
 });
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
@@ -44,7 +43,6 @@ import { pasteIntoFocusedApp } from "./paste";
 const DEFAULT_PORT = 4649;
 const APP_WIDTH = 260;
 const APP_HEIGHT = 90;
-const APP_BOTTOM_MARGIN = 0;
 
 // ---------------------------------------------------------------------------
 // settings.json helpers — single source for read/write of the lightweight
@@ -90,7 +88,6 @@ let settingsWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let keyListener: NativeKeyListener | null = null;
 let hotkeyPressed = false;
-let winToggleActive = false;
 let currentHotkeyAccel: string | null = null;
 let hotkeyActivationMode: "hold" | "toggle" = "hold";
 let micListener: MicListener | null = null;
@@ -181,7 +178,6 @@ function getAppWindowPosition(): { x: number; y: number } {
 function createAppWindow(): void {
   const { x, y } = getAppWindowPosition();
 
-  winToggleActive = false;
   mainWindow = new BrowserWindow({
     width: APP_WIDTH,
     height: APP_HEIGHT,
@@ -744,7 +740,6 @@ app.whenReady().then(async () => {
     }
     if (process.platform === "win32") {
       globalShortcut.unregisterAll();
-      winToggleActive = false;
     }
 
     stopHotkeyRecorderProcess();
@@ -1086,7 +1081,6 @@ function registerHotkey(hotkey?: string): void {
   hotkeyPressed = false;
   if (process.platform === "win32") {
     globalShortcut.unregisterAll();
-    winToggleActive = false;
   }
 
   if (!hotkey) {
