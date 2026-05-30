@@ -828,6 +828,12 @@ app.whenReady().then(async () => {
 
   createAppWindow();
 
+  // Dev-only: --reset-onboarding flag clears the onboarding state so the
+  // onboarding flow can be re-tested without manually editing settings.json.
+  if (is.dev && process.argv.includes("--reset-onboarding")) {
+    writeSettings({ onboardingComplete: false });
+  }
+
   // Show the onboarding window automatically on first launch
   if (readSettings().onboardingComplete !== true) {
     showSettingsWindow();
