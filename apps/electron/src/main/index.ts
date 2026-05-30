@@ -828,6 +828,11 @@ app.whenReady().then(async () => {
 
   createAppWindow();
 
+  // Show the onboarding window automatically on first launch
+  if (readSettings().onboardingComplete !== true) {
+    showSettingsWindow();
+  }
+
   // -- Auto-update helpers --
   const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
   let updateCheckTimer: ReturnType<typeof setInterval> | null = null;
