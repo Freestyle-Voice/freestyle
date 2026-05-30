@@ -388,8 +388,8 @@ export default function OnboardingPage(): React.JSX.Element {
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         />
       )}
-      <div className="flex flex-1 flex-col items-center justify-center">
-        <div className="responsive-standalone-pad w-full max-w-md space-y-8">
+      <div className="flex min-h-0 flex-1 flex-col items-center overflow-auto py-8">
+        <div className="responsive-standalone-pad my-auto w-full max-w-md space-y-8">
           {/* Logo */}
           <div className="flex flex-col items-center gap-3">
             <img
@@ -944,7 +944,7 @@ export default function OnboardingPage(): React.JSX.Element {
 
         {/* Step progress indicator */}
         {step !== "welcome" && (
-          <div className="mt-8 flex items-center gap-2">
+          <div className="mt-8 flex shrink-0 items-center gap-2">
             {STEPS.map((s, i) => (
               <div
                 key={s}
