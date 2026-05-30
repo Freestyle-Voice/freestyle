@@ -77,12 +77,14 @@ const transcribeRoute = new Hono().post("/", async (c) => {
     );
   }
 
+  const isDev = process.env.NODE_ENV !== "production";
+
   try {
     const bias = resolveAsrVocabularyBias(
       defaults.voice.provider,
       defaults.voice.model_id,
     );
-
+    const t0 = Date.now();
     const result = await provider.transcribe({
       audio: audioData,
       model: defaults.voice.model_id,
@@ -91,9 +93,9 @@ const transcribeRoute = new Hono().post("/", async (c) => {
       bias,
     });
     rawText = result.text;
-    if (process.env.NODE_ENV !== "production") {
+    if (isDev) {
       console.log(
-        `[transcribe] rawText=${JSON.stringify(rawText)}, audioDurationMs=${audioDurationMs}`,
+        `[transcribe] STT took ${Date.now() - t0}ms | rawText=${JSON.stringify(rawText).slice(0, 120)}`,
       );
     }
   } catch (err) {
@@ -168,7 +170,13 @@ const transcribeRoute = new Hono().post("/", async (c) => {
     });
   }
 
+  const ppStart = Date.now();
   const pp = await postProcess(rawText, appContext);
+  if (isDev) {
+    console.log(
+      `[transcribe] post-process took ${Date.now() - ppStart}ms | cleaned=${JSON.stringify(pp.cleaned).slice(0, 120)}`,
+    );
+  }
 
   Promise.resolve()
     .then(() => {
@@ -193,6 +201,10 @@ const transcribeRoute = new Hono().post("/", async (c) => {
     .catch((err) => {
       console.error("Failed to save history:", err);
     });
+
+  if (isDev) {
+    console.log(`[transcribe] total ${Date.now() - start}ms`);
+  }
 
   return c.json({
     raw: rawText,

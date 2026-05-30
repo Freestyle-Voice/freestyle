@@ -256,6 +256,7 @@ const stream = new Hono().get(
           case "start":
             sessionStartTime = Date.now();
             audioDurationMs = 0;
+            appContext = null;
             pendingAudioChunks = [];
             if (upstream) {
               upstream.reset();
