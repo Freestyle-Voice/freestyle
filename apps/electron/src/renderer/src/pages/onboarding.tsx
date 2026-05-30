@@ -300,10 +300,7 @@ export default function OnboardingPage(): React.JSX.Element {
       if (llmCleanup && selectedLlm) {
         if (needsLlmKey) {
           const valid = await llmKeyForm.trigger();
-          if (!valid) {
-            setSaving(false);
-            return;
-          }
+          if (!valid) return;
           const keyData = llmKeyForm.getValues();
           if (keyData.key.trim()) {
             await client.api.keys.$post({
