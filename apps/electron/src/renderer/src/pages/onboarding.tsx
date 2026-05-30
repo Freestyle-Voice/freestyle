@@ -8,6 +8,7 @@ import {
   CLOUD_VOICE_PROVIDERS,
   formatBytes,
   formatSpeed,
+  LLM_PROVIDERS,
   PROVIDER_DISPLAY_NAMES,
   type WhisperStatus,
 } from "@renderer/lib/models";
@@ -27,14 +28,15 @@ import {
   Mic,
   RefreshCw,
   Shield,
+  Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 
-type Step = "welcome" | "permissions" | "voice-model";
+type Step = "welcome" | "permissions" | "voice-model" | "llm-cleanup";
 
-const STEPS: Step[] = ["welcome", "permissions", "voice-model"];
+const STEPS: Step[] = ["welcome", "permissions", "voice-model", "llm-cleanup"];
 
 type ModelSource = "cloud" | "local";
 
@@ -72,6 +74,16 @@ export default function OnboardingPage(): React.JSX.Element {
   const [selectedWhisperModel, setSelectedWhisperModel] = useState<
     string | null
   >(null);
+
+  // LLM cleanup state
+  const [llmCleanup, setLlmCleanup] = useState(false);
+  const [selectedLlm, setSelectedLlm] = useState<AvailableModel | null>(null);
+  const llmKeyForm = useForm<{ provider: string; key: string }>({
+    resolver: zodResolver(apiKeySchema),
+    defaultValues: { provider: "", key: "" },
+  });
+  const [showLlmKey, setShowLlmKey] = useState(false);
+  const [needsLlmKey, setNeedsLlmKey] = useState(false);
 
   // Load permissions
   useEffect(() => {
@@ -186,6 +198,19 @@ export default function OnboardingPage(): React.JSX.Element {
     setNeedsKey(false);
   }, []);
 
+  const selectLlm = useCallback(
+    (model: AvailableModel) => {
+      setSelectedLlm(model);
+      if (!apiKeys.has(model.provider_id)) {
+        setNeedsLlmKey(true);
+        llmKeyForm.reset({ provider: model.provider_id, key: "" });
+      } else {
+        setNeedsLlmKey(false);
+      }
+    },
+    [apiKeys, llmKeyForm],
+  );
+
   const downloadWhisperModel = useCallback(
     async (modelId: string) => {
       await fetch(`${getApiBase()}/api/whisper/models/${modelId}/download`, {
@@ -196,7 +221,7 @@ export default function OnboardingPage(): React.JSX.Element {
     [loadWhisperStatus],
   );
 
-  const finishSetup = useCallback(async () => {
+  const saveVoiceAndContinue = useCallback(async () => {
     if (needsKey && selectedModel) {
       const valid = await apiKeyForm.trigger();
       if (!valid) return;
@@ -217,6 +242,7 @@ export default function OnboardingPage(): React.JSX.Element {
                 key: keyData.key.trim(),
               },
             });
+            setApiKeys((prev) => new Set([...prev, keyData.provider]));
           }
         }
 
@@ -251,8 +277,7 @@ export default function OnboardingPage(): React.JSX.Element {
         }
       }
 
-      window.api?.setOnboardingComplete();
-      navigate("/today", { replace: true });
+      setStep("llm-cleanup");
     } catch {
       // stay on voice-model step
     } finally {
@@ -264,8 +289,56 @@ export default function OnboardingPage(): React.JSX.Element {
     needsKey,
     apiKeyForm,
     whisperStatus,
-    navigate,
   ]);
+
+  const finishSetup = useCallback(async () => {
+    setSaving(true);
+
+    try {
+      const client = getClient();
+
+      if (llmCleanup && selectedLlm) {
+        if (needsLlmKey) {
+          const valid = await llmKeyForm.trigger();
+          if (!valid) {
+            setSaving(false);
+            return;
+          }
+          const keyData = llmKeyForm.getValues();
+          if (keyData.key.trim()) {
+            await client.api.keys.$post({
+              json: {
+                provider: keyData.provider,
+                key: keyData.key.trim(),
+              },
+            });
+          }
+        }
+
+        await client.api.settings[":key"].$put({
+          param: { key: "llm_cleanup" },
+          json: { value: "true" },
+        });
+
+        await client.api.models.configured.$post({
+          json: {
+            provider: selectedLlm.provider_id,
+            model_id: selectedLlm.model_id,
+            model_name: selectedLlm.model_name,
+            type: "llm",
+            is_default: true,
+          },
+        });
+      }
+
+      window.api?.setOnboardingComplete();
+      navigate("/today", { replace: true });
+    } catch {
+      // stay on step
+    } finally {
+      setSaving(false);
+    }
+  }, [llmCleanup, selectedLlm, needsLlmKey, llmKeyForm, navigate]);
 
   const voiceModels = available.filter(
     (m) => m.type === "voice" && CLOUD_VOICE_PROVIDERS.includes(m.provider_id),
@@ -276,6 +349,20 @@ export default function OnboardingPage(): React.JSX.Element {
     const list = modelsByProvider.get(m.provider_id) ?? [];
     list.push(m);
     modelsByProvider.set(m.provider_id, list);
+  }
+
+  const llmModels = available.filter(
+    (m) =>
+      m.type === "llm" &&
+      LLM_PROVIDERS.includes(m.provider_id) &&
+      m.provider_id !== "local-llm",
+  );
+
+  const llmsByProvider = new Map<string, AvailableModel[]>();
+  for (const m of llmModels) {
+    const list = llmsByProvider.get(m.provider_id) ?? [];
+    list.push(m);
+    llmsByProvider.set(m.provider_id, list);
   }
 
   const hasModelSelected =
@@ -562,7 +649,7 @@ export default function OnboardingPage(): React.JSX.Element {
                               e.key === "Enter" &&
                               apiKeyForm.getValues("key").trim()
                             )
-                              finishSetup();
+                              saveVoiceAndContinue();
                           }}
                         />
                         <button
@@ -748,11 +835,12 @@ export default function OnboardingPage(): React.JSX.Element {
 
               <button
                 type="button"
-                onClick={finishSetup}
+                onClick={saveVoiceAndContinue}
                 disabled={!canAdvanceFromModel}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 w-full rounded-lg py-3 text-sm font-medium disabled:opacity-50"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-medium disabled:opacity-50"
               >
-                {saving ? "Setting up..." : "Finish Setup"}
+                {saving ? "Setting up..." : "Continue"}
+                {!saving && <ChevronRight size={16} />}
               </button>
 
               <button
@@ -765,6 +853,180 @@ export default function OnboardingPage(): React.JSX.Element {
               >
                 Skip for now
               </button>
+            </div>
+          )}
+
+          {/* Step: LLM Cleanup */}
+          {step === "llm-cleanup" && (
+            <div className="space-y-4">
+              <button
+                type="button"
+                onClick={() => setStep("voice-model")}
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs"
+              >
+                <ChevronLeft size={14} />
+                Back
+              </button>
+              <div className="text-center">
+                <h2 className="text-lg font-semibold">Text Cleanup</h2>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  Optionally use an LLM to clean up transcriptions — fix
+                  grammar, remove filler words, and format text.
+                </p>
+              </div>
+
+              {/* Toggle */}
+              <div className="border-border rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Sparkles className="text-muted-foreground h-5 w-5 shrink-0" />
+                    <div>
+                      <div className="text-sm font-medium">
+                        Enable LLM cleanup
+                      </div>
+                      <p className="text-muted-foreground text-xs">
+                        Polish transcriptions with a language model.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLlmCleanup(!llmCleanup)}
+                    className={cn(
+                      "relative h-[22px] w-10 shrink-0 rounded-full border transition-colors",
+                      llmCleanup
+                        ? "bg-primary border-primary/80"
+                        : "bg-secondary border-border",
+                    )}
+                    aria-pressed={llmCleanup}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-[1px] block h-[18px] w-[18px] rounded-full transition-transform",
+                        llmCleanup
+                          ? "bg-primary-foreground"
+                          : "bg-muted-foreground/70",
+                      )}
+                      style={{
+                        transform: llmCleanup
+                          ? "translateX(19px)"
+                          : "translateX(2px)",
+                      }}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* LLM model picker — shown when cleanup is enabled */}
+              {llmCleanup && (
+                <>
+                  <div className="border-border max-h-52 overflow-y-auto rounded-lg border">
+                    {[...llmsByProvider.entries()].map(
+                      ([providerId, models]) => (
+                        <div key={providerId}>
+                          <div className="text-muted-foreground bg-secondary/50 sticky top-0 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider">
+                            {PROVIDER_DISPLAY_NAMES[providerId] ?? providerId}
+                          </div>
+                          {models.map((model) => (
+                            <button
+                              key={model.model_id}
+                              type="button"
+                              onClick={() => selectLlm(model)}
+                              className={cn(
+                                "hover:bg-secondary flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
+                                selectedLlm?.model_id === model.model_id &&
+                                  "bg-primary/5",
+                              )}
+                            >
+                              <span className="flex-1">{model.model_name}</span>
+                              {selectedLlm?.model_id === model.model_id && (
+                                <Check size={14} className="text-primary" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ),
+                    )}
+                    {llmModels.length === 0 && (
+                      <div className="flex items-center gap-2 px-3 py-4">
+                        <AlertTriangle className="text-muted-foreground h-4 w-4" />
+                        <span className="text-muted-foreground text-sm">
+                          Loading models...
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* LLM API key input */}
+                  {needsLlmKey && selectedLlm && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">
+                        Enter your{" "}
+                        {PROVIDER_DISPLAY_NAMES[selectedLlm.provider_id] ??
+                          selectedLlm.provider_id}{" "}
+                        API key
+                      </p>
+                      <div className="relative">
+                        <input
+                          type={showLlmKey ? "text" : "password"}
+                          {...llmKeyForm.register("key")}
+                          placeholder="sk-..."
+                          className={cn(
+                            "border-border bg-card w-full rounded-lg border px-3 py-2.5 pr-10 font-mono text-sm",
+                            llmKeyForm.formState.errors.key &&
+                              "border-destructive",
+                          )}
+                          onKeyDown={(e) => {
+                            if (
+                              e.key === "Enter" &&
+                              llmKeyForm.getValues("key").trim()
+                            )
+                              finishSetup();
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowLlmKey(!showLlmKey)}
+                          className="text-muted-foreground hover:text-foreground absolute right-3 top-1/2 -translate-y-1/2"
+                        >
+                          {showLlmKey ? (
+                            <EyeOff size={16} />
+                          ) : (
+                            <Eye size={16} />
+                          )}
+                        </button>
+                      </div>
+                      {llmKeyForm.formState.errors.key && (
+                        <p className="text-destructive text-xs">
+                          {llmKeyForm.formState.errors.key.message}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={finishSetup}
+                disabled={
+                  saving ||
+                  (llmCleanup &&
+                    selectedLlm !== null &&
+                    needsLlmKey &&
+                    !llmKeyForm.watch("key").trim()) ||
+                  (llmCleanup && selectedLlm === null)
+                }
+                className="bg-primary text-primary-foreground hover:bg-primary/90 w-full rounded-lg py-3 text-sm font-medium disabled:opacity-50"
+              >
+                {saving ? "Setting up..." : "Finish Setup"}
+              </button>
+
+              {!llmCleanup && (
+                <p className="text-muted-foreground text-center text-xs">
+                  You can enable this later in Settings &gt; Models.
+                </p>
+              )}
             </div>
           )}
         </div>
