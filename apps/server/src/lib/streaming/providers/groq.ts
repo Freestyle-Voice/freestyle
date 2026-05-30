@@ -10,7 +10,7 @@ export class GroqTranscriptionProvider implements TranscriptionProvider {
   readonly providerId = "groq";
 
   async transcribe(opts: TranscribeOptions): Promise<TranscribeResult> {
-    return transcribeWithAiSdk(opts, createGroq);
+    return transcribeWithAiSdk(opts, createGroq, this.providerId);
   }
 
   supportsStreaming(_modelId: string): boolean {

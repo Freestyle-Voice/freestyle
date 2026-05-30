@@ -1,6 +1,10 @@
 import { Buffer } from "node:buffer";
 import { createElevenLabs } from "@ai-sdk/elevenlabs";
 import WebSocket from "ws";
+import {
+  appendElevenLabsBiasToParams,
+  transcribeElevenLabsWithBias,
+} from "../transcribe-bias.js";
 import type {
   StreamingSessionOptions,
   StreamSession,
@@ -18,6 +22,7 @@ const ELEVENLABS_TOKEN_URL =
 // Issue an intermediate commit every N milliseconds during recording
 // to prevent ElevenLabs's recognition window from discarding older audio.
 const AUTO_COMMIT_INTERVAL_MS = 5_000;
+const USER_COMMIT_TIMEOUT_MS = 12_000;
 
 function audioChunkMessage(b64: string, commit: boolean): string {
   return JSON.stringify({
@@ -26,6 +31,14 @@ function audioChunkMessage(b64: string, commit: boolean): string {
     commit,
     sample_rate: 16000,
   });
+}
+
+/** Realtime WS expects *_realtime model ids; batch ids are mapped here. */
+function resolveRealtimeModelId(model: string): string {
+  const short = stripProviderPrefix(model);
+  if (short.endsWith("_realtime")) return short;
+  if (short === "scribe_v2") return "scribe_v2_realtime";
+  return short;
 }
 
 async function getSingleUseToken(apiKey: string): Promise<string> {
@@ -56,7 +69,6 @@ function joinSegments(prev: string, next: string): string {
   const prevWords = prev.split(/\s+/);
   const nextWords = next.split(/\s+/);
 
-  // Check for overlap: see if the last N words of prev match the first N of next
   const maxOverlap = Math.min(5, prevWords.length, nextWords.length);
   let overlapLen = 0;
 
@@ -78,34 +90,63 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
   readonly providerId = "elevenlabs";
 
   async transcribe(opts: TranscribeOptions): Promise<TranscribeResult> {
+    if (opts.bias?.kind === "elevenlabs-keyterms") {
+      return transcribeElevenLabsWithBias(opts, opts.bias);
+    }
     const model = stripProviderPrefix(opts.model).endsWith("_realtime")
       ? opts.model.replace(/_realtime$/, "")
       : opts.model;
-    return transcribeWithAiSdk({ ...opts, model }, createElevenLabs);
+    return transcribeWithAiSdk(
+      { ...opts, model },
+      createElevenLabs,
+      this.providerId,
+    );
   }
 
-  supportsStreaming(_modelId: string): boolean {
+  supportsStreaming(modelId: string): boolean {
+    const short = stripProviderPrefix(modelId);
+    // Scribe v1 has no realtime WebSocket model; use batch /api/transcribe instead.
+    if (short === "scribe_v1" || short.startsWith("scribe_v1_")) return false;
     return true;
   }
 
   openStreamingSession(opts: StreamingSessionOptions): StreamSession {
-    const { apiKey, model, callbacks } = opts;
+    const { apiKey, model, bias, callbacks } = opts;
 
-    // accumulatedText holds all committed segments so far.
-    // partialText holds the in-progress text for the current (uncommitted) segment.
     let accumulatedText = "";
     let partialText = "";
     let ws: WebSocket | null = null;
     const pendingChunks: ArrayBuffer[] = [];
     let autoCommitTimer: ReturnType<typeof setInterval> | null = null;
-    let isFinalCommit = false;
+    let userCommitPending = false;
+    let finalDelivered = false;
+    let commitTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    const short = stripProviderPrefix(model);
+    const short = resolveRealtimeModelId(model);
+
+    function clearCommitTimeout(): void {
+      if (commitTimeout) {
+        clearTimeout(commitTimeout);
+        commitTimeout = null;
+      }
+    }
+
+    function deliverUserFinal(): void {
+      if (!userCommitPending || finalDelivered) return;
+      userCommitPending = false;
+      finalDelivered = true;
+      clearCommitTimeout();
+      stopAutoCommit();
+      const text = (accumulatedText || partialText).trim();
+      accumulatedText = "";
+      partialText = "";
+      callbacks.onFinal(text);
+    }
 
     function startAutoCommit(): void {
       stopAutoCommit();
       autoCommitTimer = setInterval(() => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
+        if (ws && ws.readyState === WebSocket.OPEN && !userCommitPending) {
           ws.send(audioChunkMessage("", true));
         }
       }, AUTO_COMMIT_INTERVAL_MS);
@@ -126,6 +167,7 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
           audio_format: "pcm_16000",
           commit_strategy: "manual",
         });
+        appendElevenLabsBiasToParams(params, bias);
 
         ws = new WebSocket(`${ELEVENLABS_STT_URL}?${params}`);
 
@@ -157,7 +199,6 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
               return;
             case "partial_transcript": {
               partialText = msg.text ?? "";
-              // Show accumulated text + current partial to the user
               const preview = accumulatedText
                 ? `${accumulatedText} ${partialText}`.trim()
                 : partialText;
@@ -172,10 +213,8 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
               }
               partialText = "";
 
-              // Only send the final result when the user-initiated commit fires
-              if (isFinalCommit) {
-                isFinalCommit = false;
-                callbacks.onFinal(accumulatedText);
+              if (userCommitPending) {
+                deliverUserFinal();
               }
               return;
             }
@@ -188,20 +227,35 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
             case "input_error":
             case "chunk_size_exceeded":
             case "insufficient_audio_activity":
+              clearCommitTimeout();
               stopAutoCommit();
-              callbacks.onError(msg.error ?? "ElevenLabs error");
+              if (userCommitPending) {
+                deliverUserFinal();
+              } else {
+                callbacks.onError(msg.error ?? "ElevenLabs error");
+              }
               return;
           }
         });
 
         ws.on("error", (err) => {
+          clearCommitTimeout();
           stopAutoCommit();
-          callbacks.onError(err instanceof Error ? err.message : String(err));
+          if (userCommitPending) {
+            deliverUserFinal();
+          } else {
+            callbacks.onError(err instanceof Error ? err.message : String(err));
+          }
         });
 
         ws.on("close", () => {
+          clearCommitTimeout();
           stopAutoCommit();
-          callbacks.onClose();
+          if (userCommitPending) {
+            deliverUserFinal();
+          } else {
+            callbacks.onClose();
+          }
         });
       })
       .catch((err) => {
@@ -219,26 +273,48 @@ export class ElevenLabsTranscriptionProvider implements TranscriptionProvider {
           audioChunkMessage(Buffer.from(chunk).toString("base64"), false),
         );
       },
+      reset(): void {
+        clearCommitTimeout();
+        accumulatedText = "";
+        partialText = "";
+        userCommitPending = false;
+        finalDelivered = false;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          startAutoCommit();
+        }
+      },
       commit(): void {
+        userCommitPending = true;
+        finalDelivered = false;
         stopAutoCommit();
-        isFinalCommit = true;
+        clearCommitTimeout();
+
         if (!ws || ws.readyState !== WebSocket.OPEN) {
-          // If the WebSocket is not open, return whatever we have accumulated
-          callbacks.onFinal(accumulatedText || partialText);
+          deliverUserFinal();
           return;
         }
+
         ws.send(audioChunkMessage("", true));
+        commitTimeout = setTimeout(() => {
+          deliverUserFinal();
+        }, USER_COMMIT_TIMEOUT_MS);
       },
       cancel(): void {
+        clearCommitTimeout();
         stopAutoCommit();
         pendingChunks.length = 0;
+        userCommitPending = false;
+        finalDelivered = false;
         if (ws && ws.readyState <= WebSocket.OPEN) ws.close();
         accumulatedText = "";
         partialText = "";
       },
       close(): void {
+        clearCommitTimeout();
         stopAutoCommit();
         pendingChunks.length = 0;
+        userCommitPending = false;
+        finalDelivered = false;
         if (ws && ws.readyState <= WebSocket.OPEN) ws.close();
       },
     };

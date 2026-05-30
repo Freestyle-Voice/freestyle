@@ -8,16 +8,22 @@ export interface StreamCallbacks {
 
 export interface StreamSession {
   sendAudio(chunk: ArrayBuffer): void;
+  /** Clear per-recording transcript state without tearing down the socket. */
+  reset(): void;
   commit(): void;
   cancel(): void;
   close(): void;
 }
+
+import type { AsrVocabularyBias } from "../vocabulary-bias.js";
 
 export interface TranscribeOptions {
   audio: Uint8Array;
   model: string;
   apiKey: string;
   language?: string;
+  /** ASR-only vocabulary bias for the first recognition pass. */
+  bias?: AsrVocabularyBias | null;
 }
 
 export interface TranscribeResult {
@@ -33,7 +39,8 @@ export interface TranscribeResult {
 export interface StreamingSessionOptions {
   apiKey: string;
   model: string;
-  prompt?: string;
+  /** ASR-only vocabulary bias for the first recognition pass. */
+  bias?: AsrVocabularyBias | null;
   callbacks: StreamCallbacks;
 }
 

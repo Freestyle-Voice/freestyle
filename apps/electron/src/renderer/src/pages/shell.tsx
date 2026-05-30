@@ -2,7 +2,15 @@ import markDark from "@renderer/assets/mark-dark.svg";
 import markLight from "@renderer/assets/mark-light.svg";
 import { cn } from "@renderer/lib/utils";
 import type { LucideIcon } from "lucide-react";
-import { Book, BookOpen, Clock, Cpu, FileText, Sliders } from "lucide-react";
+import {
+  Book,
+  BookOpen,
+  Clock,
+  Cpu,
+  FileText,
+  Languages,
+  Sliders,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router";
 
@@ -23,20 +31,26 @@ const navItems: NavItem[] = [
     shortcut: "3",
   },
   {
+    to: "/settings/vocabulary",
+    label: "Vocabulary",
+    icon: Languages,
+    shortcut: "4",
+  },
+  {
     to: "/settings/formats",
     label: "Formats",
     icon: FileText,
-    shortcut: "4",
+    shortcut: "5",
   },
-  { to: "/settings/models", label: "Models", icon: Cpu, shortcut: "5" },
-  { to: "/settings", label: "Settings", icon: Sliders, shortcut: "6" },
+  { to: "/settings/models", label: "Models", icon: Cpu, shortcut: "6" },
+  { to: "/settings", label: "Settings", icon: Sliders, shortcut: "7" },
 ];
 
 export default function AppShell(): React.JSX.Element {
   const navigate = useNavigate();
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Cmd/Ctrl+1..8 jumps between sidebar items
+  // Cmd/Ctrl+1..9 jumps between sidebar items
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;

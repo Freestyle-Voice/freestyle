@@ -1,5 +1,5 @@
 import { Orb } from "@renderer/components/ui/orb";
-import { getApiBase, getClient } from "@renderer/lib/api";
+import { getApiBase, getClient, refreshApiBase } from "@renderer/lib/api";
 import { Recorder } from "@renderer/lib/recorder";
 import { Streamer } from "@renderer/lib/streamer";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -100,6 +100,7 @@ const pillTextStyle: React.CSSProperties = {
 interface TranscribeResult {
   raw: string;
   cleaned: string;
+  error?: string;
 }
 
 interface QueueEntry {
@@ -131,6 +132,8 @@ export default function AppPage(): React.JSX.Element {
   const startTimeRef = useRef(0);
   const timerRef = useRef<number>(0);
   const wantsMicRef = useRef(false);
+  /** True only while state is "recording" — used by the queue drain wait loop. */
+  const recordingActiveRef = useRef(false);
   const appContextRef = useRef<string | null>(null);
   const pendingCommitRef = useRef(false);
   const pillActiveRef = useRef(false);
@@ -146,105 +149,115 @@ export default function AppPage(): React.JSX.Element {
   const streamResolverRef = useRef<((r: TranscribeResult) => void) | null>(
     null,
   );
+  const drainAgainRef = useRef(false);
 
   const getInputVolume = useCallback(() => volumeRef.current, []);
 
   // ---- Queue drain ----
   // biome-ignore lint/correctness/useExhaustiveDependencies: drainQueue only reads refs plus hidePill, which is declared later in this component, so adding it to the deps array would reference it before initialization (TDZ). The empty array is intentional.
   const drainQueue = useCallback(async () => {
-    if (drainingRef.current) return;
+    if (drainingRef.current) {
+      drainAgainRef.current = true;
+      return;
+    }
     drainingRef.current = true;
 
-    while (wantsMicRef.current && pillActiveRef.current) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
+    try {
+      while (recordingActiveRef.current && pillActiveRef.current) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
 
-    if (!pillActiveRef.current || queueRef.current.length === 0) {
-      drainingRef.current = false;
-      return;
-    }
+      if (!pillActiveRef.current || queueRef.current.length === 0) {
+        return;
+      }
 
-    const batch = [...queueRef.current];
-    queueRef.current = [];
+      const batch = [...queueRef.current];
+      queueRef.current = [];
 
-    const results = await Promise.all(batch.map((e) => e.promise));
+      const results = await Promise.all(batch.map((e) => e.promise));
 
-    if (!pillActiveRef.current) {
-      drainingRef.current = false;
-      return;
-    }
+      if (!pillActiveRef.current) {
+        return;
+      }
 
-    if (wantsMicRef.current || queueRef.current.length > 0) {
-      const resolved = results
-        .filter((r) => r.raw.trim())
-        .map((r) => ({ promise: Promise.resolve(r) }));
-      queueRef.current = [...resolved, ...queueRef.current];
-      drainingRef.current = false;
-      return;
-    }
+      if (recordingActiveRef.current || queueRef.current.length > 0) {
+        const resolved = results
+          .filter((r) => r.raw.trim())
+          .map((r) => ({ promise: Promise.resolve(r) }));
+        queueRef.current = [...resolved, ...queueRef.current];
+        return;
+      }
 
-    const nonEmpty = results.filter((r) => r.raw.trim());
-    if (nonEmpty.length === 0) {
-      drainingRef.current = false;
-      hidePill();
-      return;
-    }
-
-    let finalText: string;
-
-    if (nonEmpty.length === 1) {
-      finalText = nonEmpty[0].cleaned.trim() || nonEmpty[0].raw.trim();
-    } else {
-      const combined = nonEmpty.map((r) => r.raw).join(" ");
-      try {
-        const res = await fetch(`${getApiBase()}/api/post-process`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: combined,
-            appContext: appContextRef.current,
-          }),
-        });
-        if (!pillActiveRef.current) {
-          drainingRef.current = false;
-          return;
-        }
-        if (res.ok) {
-          const data = await res.json();
-          finalText = data.cleaned || combined;
+      const nonEmpty = results.filter((r) => r.raw.trim());
+      if (nonEmpty.length === 0) {
+        const errMsg = results.find((r) => r.error)?.error;
+        if (errMsg) {
+          setState("error");
+          setMessage(errMsg);
+          setTimeout(() => hidePill(), 3000);
         } else {
+          hidePill();
+        }
+        return;
+      }
+
+      let finalText: string;
+
+      if (nonEmpty.length === 1) {
+        finalText = nonEmpty[0].cleaned.trim() || nonEmpty[0].raw.trim();
+      } else {
+        const combined = nonEmpty.map((r) => r.raw).join(" ");
+        try {
+          const res = await fetch(`${getApiBase()}/api/post-process`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: combined,
+              appContext: appContextRef.current,
+            }),
+          });
+          if (!pillActiveRef.current) {
+            return;
+          }
+          if (res.ok) {
+            const data = await res.json();
+            finalText = data.cleaned || combined;
+          } else {
+            finalText = combined;
+          }
+        } catch {
           finalText = combined;
         }
-      } catch {
-        finalText = combined;
       }
-    }
 
-    if (!pillActiveRef.current) {
+      if (!pillActiveRef.current) {
+        return;
+      }
+
+      if (recordingActiveRef.current || queueRef.current.length > 0) {
+        queueRef.current = [
+          { promise: Promise.resolve({ raw: finalText, cleaned: finalText }) },
+          ...queueRef.current,
+        ];
+        return;
+      }
+
+      await window.api.pasteText(finalText);
+      window.api.sendTranscriptionDone();
+
+      if (
+        !recordingActiveRef.current &&
+        queueRef.current.length === 0 &&
+        pillActiveRef.current
+      ) {
+        hidePill();
+      }
+    } finally {
       drainingRef.current = false;
-      return;
-    }
-
-    if (wantsMicRef.current || queueRef.current.length > 0) {
-      queueRef.current = [
-        { promise: Promise.resolve({ raw: finalText, cleaned: finalText }) },
-        ...queueRef.current,
-      ];
-      drainingRef.current = false;
-      return;
-    }
-
-    await window.api.pasteText(finalText);
-    window.api.sendTranscriptionDone();
-
-    drainingRef.current = false;
-
-    if (
-      !wantsMicRef.current &&
-      queueRef.current.length === 0 &&
-      pillActiveRef.current
-    ) {
-      hidePill();
+      if (drainAgainRef.current) {
+        drainAgainRef.current = false;
+        void drainQueue();
+      }
     }
   }, []);
 
@@ -286,18 +299,18 @@ export default function AppPage(): React.JSX.Element {
                 headers,
               })
                 .then(async (res) => {
-                  if (!res.ok) return { raw: "", cleaned: "" };
+                  if (!res.ok) return { raw: "", cleaned: "", error: msg };
                   const data = await res.json();
                   return {
                     raw: (data.raw || "").trim(),
                     cleaned: (data.cleaned || data.raw || "").trim(),
                   };
                 })
-                .catch(() => ({ raw: "", cleaned: "" }))
+                .catch(() => ({ raw: "", cleaned: "", error: msg }))
                 .then(resolver);
               return;
             }
-            resolver({ raw: "", cleaned: "" });
+            resolver({ raw: "", cleaned: "", error: msg });
             return;
           }
           if (!useStreamingRef.current) return;
@@ -463,6 +476,8 @@ export default function AppPage(): React.JSX.Element {
     pillActiveRef.current = false;
     queueRef.current = [];
     drainingRef.current = false;
+    drainAgainRef.current = false;
+    recordingActiveRef.current = false;
     streamResolverRef.current = null;
     stopVisualization();
     window.api.hidePill();
@@ -528,6 +543,7 @@ export default function AppPage(): React.JSX.Element {
 
         playTone("start");
         setState("recording");
+        recordingActiveRef.current = true;
         startTimeRef.current = Date.now();
         timerRef.current = window.setInterval(() => {
           if (!wantsMicRef.current) return;
@@ -562,6 +578,7 @@ export default function AppPage(): React.JSX.Element {
   // ---- Commit recording ----
   const commitRecording = useCallback(async () => {
     wantsMicRef.current = false;
+    recordingActiveRef.current = false;
     isReRecordingRef.current = false;
     setIsReRecording(false);
     playTone("stop");
@@ -608,9 +625,15 @@ export default function AppPage(): React.JSX.Element {
         setTimeout(() => {
           if (streamResolverRef.current === resolve) {
             streamResolverRef.current = null;
-            resolve(empty);
+            resolve({
+              raw: "",
+              cleaned: "",
+              error: "Transcription timed out",
+            });
           }
         }, 30000);
+      }).finally(() => {
+        setPendingCount((c) => Math.max(0, c - 1));
       });
       streamerRef.current.commit();
       queueRef.current.push({ promise: transcribePromise });
@@ -618,11 +641,14 @@ export default function AppPage(): React.JSX.Element {
       return;
     }
 
-    let wavBlob: Blob | null = streamerRef.current?.getWavBlob() ?? null;
-    if (!wavBlob && recorderRef.current.isRecording()) {
+    streamerRef.current?.commit();
+
+    let wavBlob: Blob | null = null;
+    if (recorderRef.current.isRecording()) {
       wavBlob = await recorderRef.current.stop();
+    } else {
+      wavBlob = streamerRef.current?.getWavBlob() ?? null;
     }
-    recorderRef.current.cancel();
     recorderRef.current.releaseStream();
 
     if (!pillActiveRef.current) {
@@ -630,7 +656,11 @@ export default function AppPage(): React.JSX.Element {
     }
 
     if (!wavBlob) {
-      if (queueRef.current.length === 0 && !drainingRef.current) hidePill();
+      if (queueRef.current.length === 0 && !drainingRef.current) {
+        setState("error");
+        setMessage("No audio captured. Try recording again.");
+        setTimeout(() => hidePill(), 2500);
+      }
       return;
     }
 
@@ -642,6 +672,16 @@ export default function AppPage(): React.JSX.Element {
     if (appContextRef.current) headers["x-app-context"] = appContextRef.current;
     if (isSubsequent) headers["x-skip-post-process"] = "true";
 
+    const serverOk = await refreshApiBase();
+    if (!serverOk) {
+      setState("error");
+      setMessage(
+        `Cannot reach Freestyle server at ${getApiBase()}. Quit and reopen the app.`,
+      );
+      setTimeout(() => hidePill(), 4000);
+      return;
+    }
+
     setPendingCount((c) => c + 1);
     const transcribePromise: Promise<TranscribeResult> = fetch(
       `${getApiBase()}/api/transcribe`,
@@ -649,10 +689,13 @@ export default function AppPage(): React.JSX.Element {
     )
       .then(async (res) => {
         if (!res.ok) {
-          const body = await res.json().catch(() => null);
+          const body = (await res.json().catch(() => null)) as {
+            error?: string;
+            detail?: string;
+          } | null;
           const msg =
-            body?.error ||
             body?.detail ||
+            body?.error ||
             `Transcription failed (${res.status})`;
           if (pillActiveRef.current && !wantsMicRef.current) {
             setState("error");
@@ -661,13 +704,26 @@ export default function AppPage(): React.JSX.Element {
           }
           return empty;
         }
-        const data = await res.json();
+        const data = (await res.json()) as {
+          raw?: string;
+          cleaned?: string;
+        };
         return {
           raw: (data.raw || "").trim(),
           cleaned: (data.cleaned || data.raw || "").trim(),
         };
       })
-      .catch(() => empty);
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : "Transcription failed";
+        const hint =
+          msg.includes("fetch") || msg.includes("Failed")
+            ? ` (${getApiBase()} unreachable — quit and reopen the app)`
+            : "";
+        return { raw: "", cleaned: "", error: `${msg}${hint}` };
+      })
+      .finally(() => {
+        setPendingCount((c) => Math.max(0, c - 1));
+      });
 
     queueRef.current.push({ promise: transcribePromise });
     drainQueue();
@@ -676,10 +732,15 @@ export default function AppPage(): React.JSX.Element {
   // ---- Cancel ----
   const cancelRecording = useCallback(() => {
     wantsMicRef.current = false;
+    recordingActiveRef.current = false;
     pillActiveRef.current = false;
     isReRecordingRef.current = false;
     setIsReRecording(false);
     queueRef.current = [];
+    drainingRef.current = false;
+    drainAgainRef.current = false;
+    streamResolverRef.current = null;
+    setPendingCount(0);
     stopVisualization();
     streamerRef.current?.cancel();
     recorderRef.current.cancel();
@@ -720,7 +781,7 @@ export default function AppPage(): React.JSX.Element {
       const s = stateRef.current;
       if (s === "idle" || s === "error") {
         startRecording(false);
-      } else if (s === "transcribing") {
+      } else if (s === "transcribing" && !recordingActiveRef.current) {
         startRecording(true);
       }
     });

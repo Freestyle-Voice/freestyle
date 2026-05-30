@@ -11,6 +11,7 @@ import {
   type StreamSession,
   supportsStreaming,
 } from "../lib/streaming-stt.js";
+import { resolveAsrVocabularyBias } from "../lib/vocabulary-bias.js";
 
 const stream = new Hono().get(
   "/",
@@ -22,8 +23,18 @@ const stream = new Hono().get(
     let voiceDefaults: { provider: string; model_id: string } | null = null;
     let appContext: string | null = null;
     let audioDurationMs = 0;
+    /** Audio received while the upstream socket is still connecting. */
+    let pendingAudioChunks: ArrayBuffer[] = [];
     let reconnectAttempts = 0;
     const MAX_RECONNECT_ATTEMPTS = 3;
+
+    function flushPendingAudio(): void {
+      if (!upstream) return;
+      for (const chunk of pendingAudioChunks) {
+        upstream.sendAudio(chunk);
+      }
+      pendingAudioChunks = [];
+    }
 
     function connectUpstream(ws: {
       send: (data: string) => void;
@@ -59,42 +70,40 @@ const stream = new Hono().get(
         defaults.voice.model_id,
       );
 
+      const modelShort = stripProviderPrefix(defaults.voice.model_id);
+
       ws.send(
         JSON.stringify({
           type: "config",
-          model: stripProviderPrefix(defaults.voice.model_id),
+          model: modelShort,
           streaming: canStream,
         }),
       );
 
       if (!canStream) {
-        ws.close();
+        ws.send(JSON.stringify({ type: "session.ready", model: modelShort }));
         return;
       }
 
-      let prompt: string | undefined;
-      try {
-        const db = getDb();
-        const row = db
-          .prepare(
-            "SELECT value FROM settings WHERE key = 'transcription_prompt'",
-          )
-          .get() as { value: string } | undefined;
-        if (row?.value) prompt = row.value;
-      } catch {}
+      const bias = resolveAsrVocabularyBias(
+        defaults.voice.provider,
+        defaults.voice.model_id,
+        true,
+      );
 
       metrics.count("streaming.session_opened", 1, {
         attributes: { provider: defaults.voice.provider },
       });
 
-      upstream = openStreamingSession({
+      const session = openStreamingSession({
         providerId: defaults.voice.provider,
         apiKey,
         model: defaults.voice.model_id,
-        prompt,
+        bias,
         callbacks: {
           onReady: (model) => {
             reconnectAttempts = 0;
+            flushPendingAudio();
             ws.send(JSON.stringify({ type: "session.ready", model }));
           },
           onPartial: (text) => {
@@ -186,9 +195,11 @@ const stream = new Hono().get(
               }),
             );
             ws.send(JSON.stringify({ type: "error", message }));
-            upstream = null;
+            if (upstream === session) upstream = null;
           },
           onClose: () => {
+            // Ignore close from a superseded socket (replaced on a later "start").
+            if (upstream !== session) return;
             upstream = null;
             if (
               !closed &&
@@ -203,6 +214,7 @@ const stream = new Hono().get(
           },
         },
       });
+      upstream = session;
     }
 
     return {
@@ -235,7 +247,13 @@ const stream = new Hono().get(
                     (data as Buffer).byteOffset,
                     (data as Buffer).byteOffset + (data as Buffer).byteLength,
                   ) as ArrayBuffer);
-          upstream?.sendAudio(buf);
+          if (!upstream) {
+            if (pendingAudioChunks.length < 500) {
+              pendingAudioChunks.push(buf);
+            }
+            return;
+          }
+          upstream.sendAudio(buf);
           return;
         }
 
@@ -262,8 +280,23 @@ const stream = new Hono().get(
             sessionStartTime = Date.now();
             audioDurationMs = 0;
             appContext = null;
+            pendingAudioChunks = [];
             reconnectAttempts = 0;
-            if (!upstream && !streamingUnsupported) {
+            if (upstream) {
+              upstream.reset();
+              flushPendingAudio();
+              const voice = voiceDefaults ?? getDefaultModels().voice;
+              if (voice) {
+                ws.send(
+                  JSON.stringify({
+                    type: "session.ready",
+                    model: stripProviderPrefix(voice.model_id),
+                  }),
+                );
+              }
+              break;
+            }
+            if (!streamingUnsupported) {
               try {
                 connectUpstream(ws);
               } catch {}
@@ -283,6 +316,7 @@ const stream = new Hono().get(
 
       onClose() {
         closed = true;
+        pendingAudioChunks = [];
         try {
           upstream?.close();
         } catch {}
@@ -291,6 +325,7 @@ const stream = new Hono().get(
 
       onError() {
         closed = true;
+        pendingAudioChunks = [];
         try {
           upstream?.close();
         } catch {}

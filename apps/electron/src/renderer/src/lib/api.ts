@@ -11,12 +11,27 @@ export function getApiBase(): string {
 
 export async function initApiBase(): Promise<void> {
   if (initialized) return;
+  await refreshApiBase();
+  initialized = true;
+}
+
+/** Re-read the server port and verify the API is reachable. */
+export async function refreshApiBase(): Promise<boolean> {
   try {
     resolvedPort = await window.api.getServerPort();
   } catch {
     resolvedPort = DEFAULT_PORT;
   }
-  initialized = true;
+  try {
+    const res = await fetch(`${getApiBase()}/api/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { status?: string; name?: string };
+    return data.status === "ok" && data.name === "freestyle";
+  } catch {
+    return false;
+  }
 }
 
 export function getClient() {
