@@ -302,11 +302,6 @@ export default function AppPage(): React.JSX.Element {
           }
           if (!useStreamingRef.current) return;
           if (!pillActiveRef.current) return;
-          const resolver = streamResolverRef.current;
-          if (resolver) {
-            streamResolverRef.current = null;
-            resolver({ raw: "", cleaned: "" });
-          }
           if (wantsMicRef.current) return;
           setState("error");
           setMessage(msg);
